@@ -27,10 +27,18 @@
 //!
 //! # Naming convention
 //!
-//! Methods suffixed with `_o` are circular counterparts of standard slice
-//! operations (e.g., [`slice_o`](RingSeq::slice_o) vs
-//! [`slice::get`]). The `O` stands for *circular index*: any `isize` value is
-//! a valid circular index as long as the slice is non-empty.
+//! Most methods use plain, Rust-idiomatic names (`take_while`, `span`,
+//! `contains_slice`, etc.) since every method on [`RingSeq`] is circular by
+//! definition.
+//!
+//! A few methods carry a distinguishing name to avoid confusion with
+//! standard-library counterparts:
+//!
+//! * `apply_o` — circular element access (the `_o` signals a circular index).
+//! * `slice_o` — circular slicing (`slice` is a fundamental Rust type).
+//! * `circular_windows`, `circular_chunks`, `circular_enumerate` — circular
+//!   variants of [`windows`](slice::windows), [`chunks`](slice::chunks), and
+//!   [`enumerate`](Iterator::enumerate).
 //!
 //! # Interaction with `[T]::rotate_left` / `[T]::rotate_right`
 //!
@@ -224,10 +232,10 @@ pub trait RingSeq<T> {
     /// ```
     /// use ring_seq::RingSeq;
     ///
-    /// assert_eq!([0, 1, 2].segment_length_o(|x| x % 2 == 0, 2), 2);
+    /// assert_eq!([0, 1, 2].segment_length(|x| x % 2 == 0, 2), 2);
     /// ```
     #[must_use]
-    fn segment_length_o(&self, pred: impl Fn(&T) -> bool, from: isize) -> usize;
+    fn segment_length(&self, pred: impl Fn(&T) -> bool, from: isize) -> usize;
 
     /// Takes the longest prefix of elements, starting from circular index
     /// `from`, that satisfy `pred`.
@@ -237,10 +245,10 @@ pub trait RingSeq<T> {
     /// ```
     /// use ring_seq::RingSeq;
     ///
-    /// assert_eq!([0, 1, 2, 3, 4].take_while_o(|&x| x < 3, 1), vec![1, 2]);
+    /// assert_eq!([0, 1, 2, 3, 4].take_while(|&x| x < 3, 1), vec![1, 2]);
     /// ```
     #[must_use]
-    fn take_while_o(&self, pred: impl Fn(&T) -> bool, from: isize) -> Vec<T>
+    fn take_while(&self, pred: impl Fn(&T) -> bool, from: isize) -> Vec<T>
     where
         T: Clone;
 
@@ -252,29 +260,29 @@ pub trait RingSeq<T> {
     /// ```
     /// use ring_seq::RingSeq;
     ///
-    /// assert_eq!([0, 1, 2, 3, 4].drop_while_o(|&x| x < 3, 1), vec![3, 4, 0]);
+    /// assert_eq!([0, 1, 2, 3, 4].drop_while(|&x| x < 3, 1), vec![3, 4, 0]);
     /// ```
     #[must_use]
-    fn drop_while_o(&self, pred: impl Fn(&T) -> bool, from: isize) -> Vec<T>
+    fn drop_while(&self, pred: impl Fn(&T) -> bool, from: isize) -> Vec<T>
     where
         T: Clone;
 
     /// Splits the circular sequence at the first element (starting from
     /// circular index `from`) that does **not** satisfy `pred`.
     ///
-    /// Returns `(take_while_o(pred, from), drop_while_o(pred, from))`.
+    /// Returns `(take_while(pred, from), drop_while(pred, from))`.
     ///
     /// # Examples
     ///
     /// ```
     /// use ring_seq::RingSeq;
     ///
-    /// let (a, b) = [0, 1, 2, 3, 4].span_o(|&x| x < 3, 1);
+    /// let (a, b) = [0, 1, 2, 3, 4].span(|&x| x < 3, 1);
     /// assert_eq!(a, vec![1, 2]);
     /// assert_eq!(b, vec![3, 4, 0]);
     /// ```
     #[must_use]
-    fn span_o(&self, pred: impl Fn(&T) -> bool, from: isize) -> (Vec<T>, Vec<T>)
+    fn span(&self, pred: impl Fn(&T) -> bool, from: isize) -> (Vec<T>, Vec<T>)
     where
         T: Clone;
 
@@ -310,11 +318,11 @@ pub trait RingSeq<T> {
     /// ```
     /// use ring_seq::RingSeq;
     ///
-    /// assert!([0, 1, 2].contains_slice_o(&[2, 0, 1, 2, 0]));
-    /// assert!(![0, 1, 2].contains_slice_o(&[1, 0]));
+    /// assert!([0, 1, 2].contains_slice(&[2, 0, 1, 2, 0]));
+    /// assert!(![0, 1, 2].contains_slice(&[1, 0]));
     /// ```
     #[must_use]
-    fn contains_slice_o(&self, slice: &[T]) -> bool
+    fn contains_slice(&self, slice: &[T]) -> bool
     where
         T: PartialEq;
 
@@ -328,10 +336,10 @@ pub trait RingSeq<T> {
     /// ```
     /// use ring_seq::RingSeq;
     ///
-    /// assert_eq!([0, 1, 2].index_of_slice_o(&[2, 0, 1, 2, 0], 0), Some(2));
+    /// assert_eq!([0, 1, 2].index_of_slice(&[2, 0, 1, 2, 0], 0), Some(2));
     /// ```
     #[must_use]
-    fn index_of_slice_o(&self, slice: &[T], from: isize) -> Option<usize>
+    fn index_of_slice(&self, slice: &[T], from: isize) -> Option<usize>
     where
         T: PartialEq;
 
@@ -346,12 +354,12 @@ pub trait RingSeq<T> {
     /// use ring_seq::RingSeq;
     ///
     /// assert_eq!(
-    ///     [0, 1, 2, 0, 1, 2].last_index_of_slice_o(&[2, 0], -1),
+    ///     [0, 1, 2, 0, 1, 2].last_index_of_slice(&[2, 0], -1),
     ///     Some(5),
     /// );
     /// ```
     #[must_use]
-    fn last_index_of_slice_o(&self, slice: &[T], end: isize) -> Option<usize>
+    fn last_index_of_slice(&self, slice: &[T], end: isize) -> Option<usize>
     where
         T: PartialEq;
 
@@ -369,15 +377,15 @@ pub trait RingSeq<T> {
     /// ```
     /// use ring_seq::RingSeq;
     ///
-    /// let windows: Vec<_> = [0, 1, 2].sliding_o(2, 1).collect();
+    /// let windows: Vec<_> = [0, 1, 2].circular_windows(2, 1).collect();
     /// assert_eq!(windows, vec![vec![0, 1], vec![1, 2], vec![2, 0]]);
     /// ```
     #[must_use]
-    fn sliding_o(&self, size: usize, step: usize) -> SlidingO<T>
+    fn circular_windows(&self, size: usize, step: usize) -> SlidingO<T>
     where
         T: Clone;
 
-    /// Fixed-size circular groups (like [`sliding_o`](RingSeq::sliding_o) with
+    /// Fixed-size circular groups (like [`circular_windows`](RingSeq::circular_windows) with
     /// `step == size`).
     ///
     /// # Panics
@@ -389,14 +397,14 @@ pub trait RingSeq<T> {
     /// ```
     /// use ring_seq::RingSeq;
     ///
-    /// let groups: Vec<_> = [0, 1, 2, 3, 4].grouped_o(2).collect();
+    /// let groups: Vec<_> = [0, 1, 2, 3, 4].circular_chunks(2).collect();
     /// assert_eq!(
     ///     groups,
     ///     vec![vec![0, 1], vec![2, 3], vec![4, 0], vec![1, 2], vec![3, 4]],
     /// );
     /// ```
     #[must_use]
-    fn grouped_o(&self, size: usize) -> SlidingO<T>
+    fn circular_chunks(&self, size: usize) -> SlidingO<T>
     where
         T: Clone;
 
@@ -409,12 +417,12 @@ pub trait RingSeq<T> {
     /// use ring_seq::RingSeq;
     ///
     /// assert_eq!(
-    ///     ['a', 'b', 'c'].zip_with_index_o(1),
+    ///     ['a', 'b', 'c'].circular_enumerate(1),
     ///     vec![('b', 1), ('c', 2), ('a', 0)],
     /// );
     /// ```
     #[must_use]
-    fn zip_with_index_o(&self, from: isize) -> Vec<(T, usize)>
+    fn circular_enumerate(&self, from: isize) -> Vec<(T, usize)>
     where
         T: Clone;
 
@@ -807,7 +815,7 @@ impl<T> RingSeq<T> for [T] {
 
     // ── Slicing ────────────────────────────────────────────────────────
 
-    fn segment_length_o(&self, pred: impl Fn(&T) -> bool, from: isize) -> usize {
+    fn segment_length(&self, pred: impl Fn(&T) -> bool, from: isize) -> usize {
         if self.is_empty() {
             return 0;
         }
@@ -824,7 +832,7 @@ impl<T> RingSeq<T> for [T] {
         count
     }
 
-    fn take_while_o(&self, pred: impl Fn(&T) -> bool, from: isize) -> Vec<T>
+    fn take_while(&self, pred: impl Fn(&T) -> bool, from: isize) -> Vec<T>
     where
         T: Clone,
     {
@@ -845,7 +853,7 @@ impl<T> RingSeq<T> for [T] {
         result
     }
 
-    fn drop_while_o(&self, pred: impl Fn(&T) -> bool, from: isize) -> Vec<T>
+    fn drop_while(&self, pred: impl Fn(&T) -> bool, from: isize) -> Vec<T>
     where
         T: Clone,
     {
@@ -854,7 +862,7 @@ impl<T> RingSeq<T> for [T] {
         }
         let n = self.len();
         let start = self.index_from(from);
-        let prefix_len = self.segment_length_o(&pred, from);
+        let prefix_len = self.segment_length(&pred, from);
         let mut result = Vec::with_capacity(n - prefix_len);
         for k in prefix_len..n {
             result.push(self[(start + k) % n].clone());
@@ -862,7 +870,7 @@ impl<T> RingSeq<T> for [T] {
         result
     }
 
-    fn span_o(&self, pred: impl Fn(&T) -> bool, from: isize) -> (Vec<T>, Vec<T>)
+    fn span(&self, pred: impl Fn(&T) -> bool, from: isize) -> (Vec<T>, Vec<T>)
     where
         T: Clone,
     {
@@ -871,7 +879,7 @@ impl<T> RingSeq<T> for [T] {
         }
         let n = self.len();
         let start = self.index_from(from);
-        let prefix_len = self.segment_length_o(&pred, from);
+        let prefix_len = self.segment_length(&pred, from);
         let mut taken = Vec::with_capacity(prefix_len);
         for k in 0..prefix_len {
             taken.push(self[(start + k) % n].clone());
@@ -901,7 +909,7 @@ impl<T> RingSeq<T> for [T] {
             .collect()
     }
 
-    fn contains_slice_o(&self, slice: &[T]) -> bool
+    fn contains_slice(&self, slice: &[T]) -> bool
     where
         T: PartialEq,
     {
@@ -916,7 +924,7 @@ impl<T> RingSeq<T> for [T] {
         (0..n).any(|start| (0..m).all(|j| self[(start + j) % n] == slice[j]))
     }
 
-    fn index_of_slice_o(&self, slice: &[T], from: isize) -> Option<usize>
+    fn index_of_slice(&self, slice: &[T], from: isize) -> Option<usize>
     where
         T: PartialEq,
     {
@@ -942,7 +950,7 @@ impl<T> RingSeq<T> for [T] {
         None
     }
 
-    fn last_index_of_slice_o(&self, slice: &[T], end: isize) -> Option<usize>
+    fn last_index_of_slice(&self, slice: &[T], end: isize) -> Option<usize>
     where
         T: PartialEq,
     {
@@ -970,7 +978,7 @@ impl<T> RingSeq<T> for [T] {
 
     // ── Iterating ──────────────────────────────────────────────────────
 
-    fn sliding_o(&self, size: usize, step: usize) -> SlidingO<T>
+    fn circular_windows(&self, size: usize, step: usize) -> SlidingO<T>
     where
         T: Clone,
     {
@@ -994,7 +1002,7 @@ impl<T> RingSeq<T> for [T] {
         }
     }
 
-    fn grouped_o(&self, size: usize) -> SlidingO<T>
+    fn circular_chunks(&self, size: usize) -> SlidingO<T>
     where
         T: Clone,
     {
@@ -1007,10 +1015,10 @@ impl<T> RingSeq<T> for [T] {
                 pos: 0,
             };
         }
-        self.sliding_o(size, size)
+        self.circular_windows(size, size)
     }
 
-    fn zip_with_index_o(&self, from: isize) -> Vec<(T, usize)>
+    fn circular_enumerate(&self, from: isize) -> Vec<(T, usize)>
     where
         T: Clone,
     {
@@ -1437,51 +1445,51 @@ mod tests {
     // ── Slicing ────────────────────────────────────────────────────────
 
     #[test]
-    fn segment_length_o_basic() {
-        assert_eq!([0, 1, 2].segment_length_o(|x| x % 2 == 0, 2), 2);
-        assert_eq!([0, 1, 2].segment_length_o(|_| true, 0), 3);
-        assert_eq!([0, 1, 2].segment_length_o(|_| false, 0), 0);
+    fn segment_length_basic() {
+        assert_eq!([0, 1, 2].segment_length(|x| x % 2 == 0, 2), 2);
+        assert_eq!([0, 1, 2].segment_length(|_| true, 0), 3);
+        assert_eq!([0, 1, 2].segment_length(|_| false, 0), 0);
     }
 
     #[test]
-    fn segment_length_o_empty() {
+    fn segment_length_empty() {
         let empty: &[i32] = &[];
-        assert_eq!(empty.segment_length_o(|_| true, 0), 0);
+        assert_eq!(empty.segment_length(|_| true, 0), 0);
     }
 
     #[test]
-    fn take_while_o_basic() {
+    fn take_while_basic() {
         assert_eq!(
-            [0, 1, 2, 3, 4].take_while_o(|&x| x < 3, 1),
+            [0, 1, 2, 3, 4].take_while(|&x| x < 3, 1),
             vec![1, 2]
         );
     }
 
     #[test]
-    fn drop_while_o_basic() {
+    fn drop_while_basic() {
         assert_eq!(
-            [0, 1, 2, 3, 4].drop_while_o(|&x| x < 3, 1),
+            [0, 1, 2, 3, 4].drop_while(|&x| x < 3, 1),
             vec![3, 4, 0]
         );
     }
 
     #[test]
-    fn span_o_basic() {
-        let (a, b) = [0, 1, 2, 3, 4].span_o(|&x| x < 3, 1);
+    fn span_basic() {
+        let (a, b) = [0, 1, 2, 3, 4].span(|&x| x < 3, 1);
         assert_eq!(a, vec![1, 2]);
         assert_eq!(b, vec![3, 4, 0]);
     }
 
     #[test]
-    fn span_o_all_pass() {
-        let (a, b) = [1, 2, 3].span_o(|_| true, 0);
+    fn span_all_pass() {
+        let (a, b) = [1, 2, 3].span(|_| true, 0);
         assert_eq!(a, vec![1, 2, 3]);
         assert!(b.is_empty());
     }
 
     #[test]
-    fn span_o_none_pass() {
-        let (a, b) = [1, 2, 3].span_o(|_| false, 0);
+    fn span_none_pass() {
+        let (a, b) = [1, 2, 3].span(|_| false, 0);
         assert!(a.is_empty());
         assert_eq!(b, vec![1, 2, 3]);
     }
@@ -1509,40 +1517,40 @@ mod tests {
     }
 
     #[test]
-    fn contains_slice_o_basic() {
-        assert!([0, 1, 2].contains_slice_o(&[2, 0]));
-        assert!([0, 1, 2].contains_slice_o(&[2, 0, 1, 2, 0]));
-        assert!(![0, 1, 2].contains_slice_o(&[1, 0]));
+    fn contains_slice_basic() {
+        assert!([0, 1, 2].contains_slice(&[2, 0]));
+        assert!([0, 1, 2].contains_slice(&[2, 0, 1, 2, 0]));
+        assert!(![0, 1, 2].contains_slice(&[1, 0]));
     }
 
     #[test]
-    fn contains_slice_o_empty_slice() {
-        assert!([0, 1, 2].contains_slice_o(&[]));
+    fn contains_slice_empty_slice() {
+        assert!([0, 1, 2].contains_slice(&[]));
     }
 
     #[test]
-    fn contains_slice_o_empty_ring() {
+    fn contains_slice_empty_ring() {
         let empty: &[i32] = &[];
-        assert!(!empty.contains_slice_o(&[1]));
-        assert!(empty.contains_slice_o(&[]));
+        assert!(!empty.contains_slice(&[1]));
+        assert!(empty.contains_slice(&[]));
     }
 
     #[test]
-    fn index_of_slice_o_basic() {
-        assert_eq!([0, 1, 2].index_of_slice_o(&[2, 0, 1, 2, 0], 0), Some(2));
-        assert_eq!([0, 1, 2].index_of_slice_o(&[0, 1], 0), Some(0));
-        assert_eq!([0, 1, 2].index_of_slice_o(&[9], 0), None);
+    fn index_of_slice_basic() {
+        assert_eq!([0, 1, 2].index_of_slice(&[2, 0, 1, 2, 0], 0), Some(2));
+        assert_eq!([0, 1, 2].index_of_slice(&[0, 1], 0), Some(0));
+        assert_eq!([0, 1, 2].index_of_slice(&[9], 0), None);
     }
 
     #[test]
-    fn index_of_slice_o_with_from() {
-        assert_eq!([0, 1, 2, 0, 1, 2].index_of_slice_o(&[0, 1], 1), Some(3));
+    fn index_of_slice_with_from() {
+        assert_eq!([0, 1, 2, 0, 1, 2].index_of_slice(&[0, 1], 1), Some(3));
     }
 
     #[test]
-    fn last_index_of_slice_o_basic() {
+    fn last_index_of_slice_basic() {
         assert_eq!(
-            [0, 1, 2, 0, 1, 2].last_index_of_slice_o(&[2, 0], -1),
+            [0, 1, 2, 0, 1, 2].last_index_of_slice(&[2, 0], -1),
             Some(5)
         );
     }
@@ -1550,38 +1558,38 @@ mod tests {
     // ── Iterating ──────────────────────────────────────────────────────
 
     #[test]
-    fn sliding_o_basic() {
-        let windows: Vec<_> = [0, 1, 2].sliding_o(2, 1).collect();
+    fn circular_windows_basic() {
+        let windows: Vec<_> = [0, 1, 2].circular_windows(2, 1).collect();
         assert_eq!(windows, vec![vec![0, 1], vec![1, 2], vec![2, 0]]);
     }
 
     #[test]
-    fn sliding_o_empty() {
-        let windows: Vec<Vec<i32>> = ([] as [i32; 0]).sliding_o(2, 1).collect();
+    fn circular_windows_empty() {
+        let windows: Vec<Vec<i32>> = ([] as [i32; 0]).circular_windows(2, 1).collect();
         assert!(windows.is_empty());
     }
 
     #[test]
-    fn sliding_o_exact_size() {
-        let iter = [0, 1, 2].sliding_o(2, 1);
+    fn circular_windows_exact_size() {
+        let iter = [0, 1, 2].circular_windows(2, 1);
         assert_eq!(iter.len(), 3);
     }
 
     #[test]
     #[should_panic]
-    fn sliding_o_zero_size_panics() {
-        let _ = [0, 1, 2].sliding_o(0, 1);
+    fn circular_windows_zero_size_panics() {
+        let _ = [0, 1, 2].circular_windows(0, 1);
     }
 
     #[test]
     #[should_panic]
-    fn sliding_o_zero_step_panics() {
-        let _ = [0, 1, 2].sliding_o(1, 0);
+    fn circular_windows_zero_step_panics() {
+        let _ = [0, 1, 2].circular_windows(1, 0);
     }
 
     #[test]
-    fn grouped_o_basic() {
-        let groups: Vec<_> = [0, 1, 2, 3, 4].grouped_o(2).collect();
+    fn circular_chunks_basic() {
+        let groups: Vec<_> = [0, 1, 2, 3, 4].circular_chunks(2).collect();
         assert_eq!(
             groups,
             vec![vec![0, 1], vec![2, 3], vec![4, 0], vec![1, 2], vec![3, 4]]
@@ -1589,23 +1597,23 @@ mod tests {
     }
 
     #[test]
-    fn grouped_o_evenly_divisible() {
-        let groups: Vec<_> = [0, 1, 2, 3].grouped_o(2).collect();
+    fn circular_chunks_evenly_divisible() {
+        let groups: Vec<_> = [0, 1, 2, 3].circular_chunks(2).collect();
         assert_eq!(groups, vec![vec![0, 1], vec![2, 3], vec![0, 1], vec![2, 3]]);
     }
 
     #[test]
-    fn zip_with_index_o_basic() {
+    fn circular_enumerate_basic() {
         assert_eq!(
-            ['a', 'b', 'c'].zip_with_index_o(1),
+            ['a', 'b', 'c'].circular_enumerate(1),
             vec![('b', 1), ('c', 2), ('a', 0)]
         );
     }
 
     #[test]
-    fn zip_with_index_o_empty() {
+    fn circular_enumerate_empty() {
         let empty: &[i32] = &[];
-        assert!(empty.zip_with_index_o(0).is_empty());
+        assert!(empty.circular_enumerate(0).is_empty());
     }
 
     #[test]

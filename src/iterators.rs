@@ -2,8 +2,8 @@
 
 /// Sliding windows over a circular sequence.
 ///
-/// Created by [`RingSeq::sliding_o`](crate::RingSeq::sliding_o) and
-/// [`RingSeq::grouped_o`](crate::RingSeq::grouped_o).
+/// Created by [`RingSeq::circular_windows`](crate::RingSeq::circular_windows)
+/// and [`RingSeq::circular_chunks`](crate::RingSeq::circular_chunks).
 #[derive(Debug, Clone)]
 pub struct SlidingO<T> {
     pub(crate) data: Vec<T>,
