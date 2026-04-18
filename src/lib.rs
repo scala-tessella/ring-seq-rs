@@ -1,6 +1,6 @@
 //! Circular (ring) sequence operations for Rust slices.
 //!
-//! `ring-seq` extends `[T]` (and, through [`Deref`] coercion, [`Vec<T>`],
+//! `ring-seq` extends `[T]` (and, through [`Deref`](core::ops::Deref) coercion, [`Vec<T>`],
 //! arrays, and [`Box<[T]>`](Box)) with operations that treat the sequence as
 //! **circular** — the element after the last wraps back to the first.
 //!
