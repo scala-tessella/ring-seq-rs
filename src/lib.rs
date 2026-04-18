@@ -1066,11 +1066,7 @@ impl<T> RingSeq<T> for [T] {
             ring: self,
             reflected,
             index: 0,
-            total: if self.is_empty() {
-                1
-            } else {
-                self.len() * 2
-            },
+            total: if self.is_empty() { 1 } else { self.len() * 2 },
         }
     }
 
@@ -1116,8 +1112,7 @@ impl<T> RingSeq<T> for [T] {
         if self.len() != that.len() {
             return false;
         }
-        contains_as_rotation(self, that)
-            || contains_as_rotation(&self.reflect_at(0), that)
+        contains_as_rotation(self, that) || contains_as_rotation(&self.reflect_at(0), that)
     }
 
     fn rotation_offset(&self, that: &[T]) -> Option<usize>
@@ -1138,36 +1133,21 @@ impl<T> RingSeq<T> for [T] {
     where
         T: PartialEq,
     {
-        assert_eq!(
-            self.len(),
-            that.len(),
-            "sequences must have the same size"
-        );
-        self.iter()
-            .zip(that.iter())
-            .filter(|(a, b)| a != b)
-            .count()
+        assert_eq!(self.len(), that.len(), "sequences must have the same size");
+        self.iter().zip(that.iter()).filter(|(a, b)| a != b).count()
     }
 
     fn min_rotational_hamming_distance(&self, that: &[T]) -> usize
     where
         T: PartialEq + Clone,
     {
-        assert_eq!(
-            self.len(),
-            that.len(),
-            "sequences must have the same size"
-        );
+        assert_eq!(self.len(), that.len(), "sequences must have the same size");
         if self.is_empty() {
             return 0;
         }
         let n = self.len();
         (0..n)
-            .map(|rot| {
-                (0..n)
-                    .filter(|&j| self[(rot + j) % n] != that[j])
-                    .count()
-            })
+            .map(|rot| (0..n).filter(|&j| self[(rot + j) % n] != that[j]).count())
             .min()
             .unwrap()
     }
@@ -1216,9 +1196,8 @@ impl<T> RingSeq<T> for [T] {
         if n < 2 {
             return 1;
         }
-        let smallest_period = (1..=n).find(|&shift| {
-            n % shift == 0 && (0..n - shift).all(|i| self[i] == self[i + shift])
-        });
+        let smallest_period = (1..=n)
+            .find(|&shift| n % shift == 0 && (0..n - shift).all(|i| self[i] == self[i + shift]));
         n / smallest_period.unwrap_or(n)
     }
 
@@ -1232,9 +1211,7 @@ impl<T> RingSeq<T> for [T] {
         }
         let reversed: Vec<&T> = self.iter().rev().collect();
         (0..n)
-            .filter(|&shift| {
-                (0..n).all(|i| self[i] == *reversed[(i + shift) % n])
-            })
+            .filter(|&shift| (0..n).all(|i| self[i] == *reversed[(i + shift) % n]))
             .collect()
     }
 
@@ -1312,7 +1289,11 @@ fn contains_as_rotation<T: PartialEq>(ring: &[T], that: &[T]) -> bool {
 
 /// Booth's O(n) algorithm for finding the starting index of the
 /// lexicographically smallest rotation.
-#[allow(clippy::cast_sign_loss, clippy::cast_possible_wrap, clippy::many_single_char_names)]
+#[allow(
+    clippy::cast_sign_loss,
+    clippy::cast_possible_wrap,
+    clippy::many_single_char_names
+)]
 fn booth_least_rotation<T: Ord>(s: &[T]) -> usize {
     let n = s.len();
     let len = 2 * n;
@@ -1459,18 +1440,12 @@ mod tests {
 
     #[test]
     fn take_while_basic() {
-        assert_eq!(
-            [0, 1, 2, 3, 4].take_while(|&x| x < 3, 1),
-            vec![1, 2]
-        );
+        assert_eq!([0, 1, 2, 3, 4].take_while(|&x| x < 3, 1), vec![1, 2]);
     }
 
     #[test]
     fn drop_while_basic() {
-        assert_eq!(
-            [0, 1, 2, 3, 4].drop_while(|&x| x < 3, 1),
-            vec![3, 4, 0]
-        );
+        assert_eq!([0, 1, 2, 3, 4].drop_while(|&x| x < 3, 1), vec![3, 4, 0]);
     }
 
     #[test]
@@ -1549,10 +1524,7 @@ mod tests {
 
     #[test]
     fn last_index_of_slice_basic() {
-        assert_eq!(
-            [0, 1, 2, 0, 1, 2].last_index_of_slice(&[2, 0], -1),
-            Some(5)
-        );
+        assert_eq!([0, 1, 2, 0, 1, 2].last_index_of_slice(&[2, 0], -1), Some(5));
     }
 
     // ── Iterating ──────────────────────────────────────────────────────
