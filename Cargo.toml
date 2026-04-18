@@ -1,6 +1,6 @@
 [package]
 name = "ring-seq"
-version = "0.1.2"
+version = "0.1.3"
 edition = "2021"
 authors = ["Mario Callisto <mario.callisto@proton.me>"]
 description = "Circular (ring) sequence operations for Rust slices — rotations, reflections, necklace canonical forms, symmetry detection, and more."
