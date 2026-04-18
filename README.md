@@ -4,7 +4,7 @@ Circular (ring) sequence operations for Rust slices.
 
 [![Crates.io](https://img.shields.io/crates/v/ring-seq.svg)](https://crates.io/crates/ring-seq)
 [![docs.rs](https://docs.rs/ring-seq/badge.svg)](https://docs.rs/ring-seq)
-[![License](https://img.shields.io/crates/l/ring-seq.svg)](https://github.com/scala-tessella/ring-seq-rs/blob/main/LICENSE)
+[![License](https://img.shields.io/crates/l/ring-seq.svg)](https://github.com/scala-tessella/ring-seq-rs#license)
 
 `ring-seq` extends `[T]` — and by `Deref` coercion `Vec<T>`, arrays, and
 `Box<[T]>` — with operations that treat the sequence as **circular**: the
@@ -147,4 +147,9 @@ standard-library methods:
 
 ## License
 
-Apache-2.0
+Licensed under either of
+
+- [Apache License, Version 2.0](LICENSE-APACHE)
+- [MIT License](LICENSE-MIT)
+
+at your option.
