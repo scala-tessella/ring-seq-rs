@@ -13,9 +13,6 @@ element after the last wraps back to the first.
 Zero dependencies. Zero unsafe. `#[must_use]` on every method that returns a
 value.
 
-> This is the Rust port of the Scala
-> [ring-seq](https://github.com/scala-tessella/ring-seq) library.
-
 ## Quick start
 
 Add to your `Cargo.toml`:
@@ -144,6 +141,12 @@ standard-library methods:
 ## Minimum Rust version
 
 1.63
+
+## Other languages
+
+The same library, adapted for the specific idiom, is available also for:
+- Python — [ring-seq-py](https://github.com/scala-tessella/ring-seq-py)
+- Scala — [ring-seq](https://github.com/scala-tessella/ring-seq)
 
 ## License
 
