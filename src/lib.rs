@@ -385,8 +385,9 @@ pub trait RingSeq<T> {
     where
         T: Clone;
 
-    /// Fixed-size circular groups (like [`circular_windows`](RingSeq::circular_windows) with
-    /// `step == size`).
+    /// Partitions the circular sequence into `ceil(n / size)` non-overlapping
+    /// chunks of exactly `size` elements each; the last chunk wraps across the
+    /// seam when `size` does not divide `n`.
     ///
     /// # Panics
     ///
@@ -398,10 +399,7 @@ pub trait RingSeq<T> {
     /// use ring_seq::RingSeq;
     ///
     /// let groups: Vec<_> = [0, 1, 2, 3, 4].circular_chunks(2).collect();
-    /// assert_eq!(
-    ///     groups,
-    ///     vec![vec![0, 1], vec![2, 3], vec![4, 0], vec![1, 2], vec![3, 4]],
-    /// );
+    /// assert_eq!(groups, vec![vec![0, 1], vec![2, 3], vec![4, 0]]);
     /// ```
     #[must_use]
     fn circular_chunks(&self, size: usize) -> SlidingO<T>
@@ -618,7 +616,7 @@ pub trait RingSeq<T> {
     #[must_use]
     fn min_rotational_hamming_distance(&self, that: &[T]) -> usize
     where
-        T: PartialEq + Clone;
+        T: PartialEq;
 
     // ── Necklace ───────────────────────────────────────────────────────
 
@@ -1015,7 +1013,15 @@ impl<T> RingSeq<T> for [T] {
                 pos: 0,
             };
         }
-        self.circular_windows(size, size)
+        let count = (self.len() + size - 1) / size;
+        let total_len = count * size;
+        #[allow(clippy::cast_possible_wrap)]
+        SlidingO {
+            data: self.slice_o(0, total_len as isize),
+            window_size: size,
+            step: size,
+            pos: 0,
+        }
     }
 
     fn circular_enumerate(&self, from: isize) -> Vec<(T, usize)>
@@ -1139,17 +1145,35 @@ impl<T> RingSeq<T> for [T] {
 
     fn min_rotational_hamming_distance(&self, that: &[T]) -> usize
     where
-        T: PartialEq + Clone,
+        T: PartialEq,
     {
         assert_eq!(self.len(), that.len(), "sequences must have the same size");
-        if self.is_empty() {
+        let n = self.len();
+        if n == 0 {
             return 0;
         }
-        let n = self.len();
-        (0..n)
-            .map(|rot| (0..n).filter(|&j| self[(rot + j) % n] != that[j]).count())
-            .min()
-            .unwrap()
+        let mut best = usize::MAX;
+        let mut k = 0;
+        while k < n && best != 0 {
+            let mut count = 0;
+            let mut ai = k;
+            let mut i = 0;
+            while i < n && count < best {
+                if self[ai] != that[i] {
+                    count += 1;
+                }
+                ai += 1;
+                if ai == n {
+                    ai = 0;
+                }
+                i += 1;
+            }
+            if count < best {
+                best = count;
+            }
+            k += 1;
+        }
+        best
     }
 
     // ── Necklace ───────────────────────────────────────────────────────
@@ -1562,16 +1586,13 @@ mod tests {
     #[test]
     fn circular_chunks_basic() {
         let groups: Vec<_> = [0, 1, 2, 3, 4].circular_chunks(2).collect();
-        assert_eq!(
-            groups,
-            vec![vec![0, 1], vec![2, 3], vec![4, 0], vec![1, 2], vec![3, 4]]
-        );
+        assert_eq!(groups, vec![vec![0, 1], vec![2, 3], vec![4, 0]]);
     }
 
     #[test]
     fn circular_chunks_evenly_divisible() {
         let groups: Vec<_> = [0, 1, 2, 3].circular_chunks(2).collect();
-        assert_eq!(groups, vec![vec![0, 1], vec![2, 3], vec![0, 1], vec![2, 3]]);
+        assert_eq!(groups, vec![vec![0, 1], vec![2, 3]]);
     }
 
     #[test]
