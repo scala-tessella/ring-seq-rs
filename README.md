@@ -19,7 +19,7 @@ Add to your `Cargo.toml`:
 
 ```toml
 [dependencies]
-ring-seq = "0.1"
+ring-seq = "0.2"
 ```
 
 Then import the trait and call methods on any slice:
