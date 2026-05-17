@@ -8,6 +8,12 @@
 
 use core::iter::FusedIterator;
 
+#[cfg(feature = "alloc")]
+use alloc::vec::Vec;
+
+#[cfg(feature = "alloc")]
+use crate::AxisLocation;
+
 /// A borrowed view of a slice as a circular sequence.
 ///
 /// Carries a `(slice, offset, reflected)` triple. Every operation routes
@@ -457,6 +463,247 @@ impl<'a, T> Circular<'a, T> {
         Windows { base: self, size, step: 1, index: 0, total }
     }
 
+    // -----------------------------------------------------------------------
+    // Indexing
+    // -----------------------------------------------------------------------
+
+    /// Normalizes a circular index to `[0, len)`.
+    ///
+    /// Uses Euclidean remainder so that negative indices wrap correctly.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the ring is empty.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use ring_seq::AsCircular;
+    ///
+    /// let r = [10, 20, 30].circular();
+    /// assert_eq!(r.index_from(0), 0);
+    /// assert_eq!(r.index_from(4), 1);
+    /// assert_eq!(r.index_from(-1), 2);
+    /// ```
+    #[must_use]
+    pub fn index_from(self, i: isize) -> usize {
+        let n = self.ring.len();
+        assert!(n > 0, "cannot normalize against an empty ring");
+        let pos = i.rem_euclid(n as isize) as usize;
+        self.map_index(pos)
+    }
+
+    // -----------------------------------------------------------------------
+    // Comparison — alloc-free
+    // -----------------------------------------------------------------------
+
+    /// Returns `true` if `other` is some rotation of this view.
+    #[must_use]
+    pub fn is_rotation_of(self, other: &[T]) -> bool
+    where
+        T: PartialEq,
+    {
+        if self.len() != other.len() {
+            return false;
+        }
+        if self.ring.is_empty() {
+            return true;
+        }
+        self.rotations().any(|rot| rot.iter().eq(other.iter()))
+    }
+
+    /// Returns `true` if `other` equals this view or its reflection at
+    /// position 0.
+    #[must_use]
+    pub fn is_reflection_of(self, other: &[T]) -> bool
+    where
+        T: PartialEq,
+    {
+        if self.len() != other.len() {
+            return false;
+        }
+        self.iter().eq(other.iter()) || self.reflect_at(0).iter().eq(other.iter())
+    }
+
+    /// Returns `true` if `other` equals this view or its reverse.
+    #[must_use]
+    pub fn is_reversion_of(self, other: &[T]) -> bool
+    where
+        T: PartialEq,
+    {
+        if self.len() != other.len() {
+            return false;
+        }
+        self.iter().eq(other.iter()) || self.reflect_at(-1).iter().eq(other.iter())
+    }
+
+    /// Returns `true` if `other` is any rotation of this view or of its
+    /// reflection at position 0.
+    #[must_use]
+    pub fn is_rotation_or_reflection_of(self, other: &[T]) -> bool
+    where
+        T: PartialEq,
+    {
+        if self.len() != other.len() {
+            return false;
+        }
+        self.rotations_and_reflections()
+            .any(|v| v.iter().eq(other.iter()))
+    }
+
+    /// Returns the starting offset at which `other` matches this view as a
+    /// rotation, or `None` if no such offset exists.
+    #[must_use]
+    pub fn rotation_offset(self, other: &[T]) -> Option<usize>
+    where
+        T: PartialEq,
+    {
+        if self.len() != other.len() {
+            return None;
+        }
+        if self.ring.is_empty() {
+            return Some(0);
+        }
+        let n = self.ring.len();
+        (0..n).find(|&i| self.start_at(i as isize).iter().eq(other.iter()))
+    }
+
+    /// Counts positions where this view and `other` differ.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the lengths differ.
+    #[must_use]
+    pub fn hamming_distance(self, other: &[T]) -> usize
+    where
+        T: PartialEq,
+    {
+        assert_eq!(self.len(), other.len(), "sequences must have the same size");
+        self.iter().zip(other.iter()).filter(|(a, b)| a != b).count()
+    }
+
+    /// Minimum Hamming distance over all rotations of this view against
+    /// `other`.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the lengths differ.
+    #[must_use]
+    pub fn min_rotational_hamming_distance(self, other: &[T]) -> usize
+    where
+        T: PartialEq,
+    {
+        assert_eq!(self.len(), other.len(), "sequences must have the same size");
+        let n = self.ring.len();
+        if n == 0 {
+            return 0;
+        }
+        let mut best = usize::MAX;
+        for rot in self.rotations() {
+            let count = rot.iter().zip(other.iter()).filter(|(a, b)| a != b).count();
+            if count < best {
+                best = count;
+            }
+            if best == 0 {
+                break;
+            }
+        }
+        best
+    }
+
+    /// Returns `true` if `needle` appears as a contiguous (possibly
+    /// wrapping) substring of this view.
+    ///
+    /// An empty `needle` is always contained.
+    #[must_use]
+    pub fn contains_slice(self, needle: &[T]) -> bool
+    where
+        T: PartialEq,
+    {
+        if needle.is_empty() {
+            return true;
+        }
+        if self.ring.is_empty() {
+            return false;
+        }
+        let n = self.ring.len();
+        let m = needle.len();
+        (0..n).any(|start| {
+            (0..m).all(|j| *self.apply((start + j) as isize) == needle[j])
+        })
+    }
+
+    /// Returns the starting circular index at which `needle` appears, or
+    /// `None` if it does not. Searches forward from `from`.
+    #[must_use]
+    pub fn index_of_slice(self, needle: &[T], from: isize) -> Option<usize>
+    where
+        T: PartialEq,
+    {
+        if needle.is_empty() {
+            return if self.ring.is_empty() { Some(0) } else { Some(self.index_from(from)) };
+        }
+        if self.ring.is_empty() {
+            return None;
+        }
+        let n = self.ring.len();
+        let m = needle.len();
+        let start = self.index_from(from);
+        (0..n)
+            .map(|k| (start + k) % n)
+            .find(|&i| (0..m).all(|j| *self.apply((i + j) as isize) == needle[j]))
+    }
+
+    // -----------------------------------------------------------------------
+    // Symmetry — alloc-free counts
+    // -----------------------------------------------------------------------
+
+    /// Returns the rotational symmetry order: `n / smallest_period`, where
+    /// the smallest period is the smallest divisor `d` of `n` such that
+    /// `apply(i) == apply(i + d)` for all `i`. Empty and single-element
+    /// rings have rotational symmetry 1.
+    #[must_use]
+    pub fn rotational_symmetry(self) -> usize
+    where
+        T: PartialEq,
+    {
+        let n = self.ring.len();
+        if n < 2 {
+            return 1;
+        }
+        let smallest = (1..=n).find(|&d| {
+            n % d == 0 && (0..n - d).all(|i| {
+                *self.apply(i as isize) == *self.apply((i + d) as isize)
+            })
+        });
+        n / smallest.unwrap_or(n)
+    }
+
+    /// Returns an iterator over the shifts at which this view equals its
+    /// own reverse rotated by that shift — i.e., the count of reflectional
+    /// symmetry axes (without allocating the indices themselves).
+    ///
+    /// Use [`symmetry_indices`](Self::symmetry_indices) (alloc-gated) if
+    /// you need the actual indices.
+    #[must_use]
+    pub fn symmetry(self) -> usize
+    where
+        T: PartialEq,
+    {
+        let n = self.ring.len();
+        if n == 0 {
+            return 0;
+        }
+        let reversed = self.reflect_at(-1);
+        (0..n)
+            .filter(|&shift| {
+                (0..n).all(|i| {
+                    *self.apply(i as isize) == *reversed.apply((i + shift) as isize)
+                })
+            })
+            .count()
+    }
+
     /// Returns an iterator yielding non-overlapping circular chunks of
     /// length `size` as [`CircularIter`]s.
     ///
@@ -878,6 +1125,162 @@ impl<T> AsCircular<T> for [T] {
     fn circular(&self) -> Circular<'_, T> {
         Circular::new(self)
     }
+}
+
+// ---------------------------------------------------------------------------
+// Alloc-gated section: methods returning owned collections, plus Booth's
+// algorithm for canonical-index search.
+// ---------------------------------------------------------------------------
+
+#[cfg(feature = "alloc")]
+impl<'a, T> Circular<'a, T> {
+    /// Materializes this view as a `Vec<T>`. Requires `T: Clone`.
+    #[must_use]
+    pub fn to_vec(self) -> Vec<T>
+    where
+        T: Clone,
+    {
+        self.iter().cloned().collect()
+    }
+
+    /// Returns the starting offset of the lexicographically smallest
+    /// rotation of this view (Booth's O(n) algorithm).
+    ///
+    /// Single-element and empty views return `0`.
+    #[must_use]
+    pub fn canonical_index(self) -> usize
+    where
+        T: Ord,
+    {
+        if self.ring.len() <= 1 {
+            0
+        } else {
+            booth_least_rotation(self)
+        }
+    }
+
+    /// Returns the canonical (lexicographically smallest) rotation of
+    /// this view as a `Vec<T>`. Requires `T: Clone + Ord`.
+    #[must_use]
+    pub fn canonical(self) -> Vec<T>
+    where
+        T: Clone + Ord,
+    {
+        let idx = self.canonical_index();
+        self.start_at(idx as isize).to_vec()
+    }
+
+    /// Returns the bracelet form: the lexicographically smallest among
+    /// `canonical()` and `reflect_at(0).canonical()`. Requires
+    /// `T: Clone + Ord`.
+    #[must_use]
+    pub fn bracelet(self) -> Vec<T>
+    where
+        T: Clone + Ord,
+    {
+        let a = self.canonical();
+        let b = self.reflect_at(0).canonical();
+        if a <= b { a } else { b }
+    }
+
+    /// Returns the shifts `k` in `[0, n)` for which this view equals its
+    /// own reverse rotated by `k`. Each shift corresponds to one axis of
+    /// reflectional symmetry.
+    #[must_use]
+    pub fn symmetry_indices(self) -> Vec<usize>
+    where
+        T: PartialEq,
+    {
+        let n = self.ring.len();
+        if n == 0 {
+            return Vec::new();
+        }
+        let reversed = self.reflect_at(-1);
+        (0..n)
+            .filter(|&shift| {
+                (0..n).all(|i| {
+                    *self.apply(i as isize) == *reversed.apply((i + shift) as isize)
+                })
+            })
+            .collect()
+    }
+
+    /// Returns the axes of reflectional symmetry as
+    /// `(AxisLocation, AxisLocation)` pairs (each axis hits the ring in
+    /// two locations).
+    #[must_use]
+    pub fn reflectional_symmetry_axes(self) -> Vec<(AxisLocation, AxisLocation)>
+    where
+        T: PartialEq,
+    {
+        let n = self.ring.len();
+        if n == 0 {
+            return Vec::new();
+        }
+
+        #[allow(clippy::cast_possible_wrap, clippy::cast_sign_loss)]
+        self.symmetry_indices()
+            .into_iter()
+            .map(|shift| {
+                let raw_k = (n as isize - 1 - shift as isize) % n as isize;
+                let k = if raw_k < 0 {
+                    (raw_k + n as isize) as usize
+                } else {
+                    raw_k as usize
+                };
+
+                if n % 2 != 0 {
+                    let v = (k * (n + 1) / 2) % n;
+                    let opp = (v + n / 2) % n;
+                    (AxisLocation::Vertex(v), AxisLocation::edge(opp, n))
+                } else if k % 2 == 0 {
+                    let v1 = k / 2;
+                    let v2 = (v1 + n / 2) % n;
+                    (AxisLocation::Vertex(v1), AxisLocation::Vertex(v2))
+                } else {
+                    let e1 = (k - 1) / 2;
+                    let e2 = (e1 + n / 2) % n;
+                    (AxisLocation::edge(e1, n), AxisLocation::edge(e2, n))
+                }
+            })
+            .collect()
+    }
+}
+
+/// Booth's O(n) algorithm for finding the starting offset of the
+/// lexicographically smallest rotation of a `Circular` view.
+#[cfg(feature = "alloc")]
+#[allow(
+    clippy::cast_sign_loss,
+    clippy::cast_possible_wrap,
+    clippy::many_single_char_names
+)]
+fn booth_least_rotation<T: Ord>(c: Circular<'_, T>) -> usize {
+    let n = c.ring.len();
+    let len = 2 * n;
+    let mut f: Vec<isize> = alloc::vec![-1; len];
+    let mut k: usize = 0;
+    let at = |idx: usize| &c.ring[c.map_index(idx % n)];
+
+    for j in 1..len {
+        let sj = at(j);
+        let mut i = f[j - k - 1];
+        while i != -1 && at(k + i as usize + 1) != sj {
+            if sj < at(k + i as usize + 1) {
+                k = j - i as usize - 1;
+            }
+            i = f[i as usize];
+        }
+        if i == -1 && at(k) != sj {
+            if sj < at(k) {
+                k = j;
+            }
+            f[j - k] = -1;
+        } else {
+            f[j - k] = i + 1;
+        }
+    }
+    k
 }
 
 // ---------------------------------------------------------------------------
@@ -1389,5 +1792,274 @@ mod tests {
             clone.next().map_or(false, |x| x % 2 == 0)
         }).count();
         assert_eq!(n, 2); // windows starting at 2 and 4
+    }
+
+    // ── Index normalization ────────────────────────────────────────────
+
+    #[test]
+    fn index_from_basic() {
+        let r = [10, 20, 30].circular();
+        assert_eq!(r.index_from(0), 0);
+        assert_eq!(r.index_from(2), 2);
+        assert_eq!(r.index_from(3), 0);
+        assert_eq!(r.index_from(7), 1);
+        assert_eq!(r.index_from(-1), 2);
+        assert_eq!(r.index_from(-4), 2);
+    }
+
+    #[test]
+    #[should_panic]
+    fn index_from_empty_panics() {
+        let empty: [i32; 0] = [];
+        let _ = empty.circular().index_from(0);
+    }
+
+    // ── Comparison predicates ──────────────────────────────────────────
+
+    #[test]
+    fn is_rotation_of_true() {
+        let a = [1, 2, 3, 4];
+        let b = [3, 4, 1, 2];
+        assert!(a.circular().is_rotation_of(&b));
+    }
+
+    #[test]
+    fn is_rotation_of_false() {
+        let a = [1, 2, 3, 4];
+        let b = [4, 3, 2, 1];
+        assert!(!a.circular().is_rotation_of(&b));
+    }
+
+    #[test]
+    fn is_rotation_of_empty() {
+        let a: [i32; 0] = [];
+        let b: [i32; 0] = [];
+        assert!(a.circular().is_rotation_of(&b));
+    }
+
+    #[test]
+    fn is_rotation_of_length_mismatch() {
+        assert!(![1, 2].circular().is_rotation_of(&[1, 2, 3]));
+    }
+
+    #[test]
+    fn is_reflection_of_basic() {
+        let a = [1, 2, 3, 4];
+        assert!(a.circular().is_reflection_of(&[1, 4, 3, 2]));
+        assert!(a.circular().is_reflection_of(&[1, 2, 3, 4]));
+        assert!(!a.circular().is_reflection_of(&[2, 1, 4, 3]));
+    }
+
+    #[test]
+    fn is_reversion_of_basic() {
+        let a = [1, 2, 3, 4];
+        assert!(a.circular().is_reversion_of(&[1, 2, 3, 4]));
+        assert!(a.circular().is_reversion_of(&[4, 3, 2, 1]));
+        assert!(!a.circular().is_reversion_of(&[3, 2, 1, 4]));
+    }
+
+    #[test]
+    fn is_rotation_or_reflection_of_basic() {
+        let a = [1, 2, 3, 4];
+        assert!(a.circular().is_rotation_or_reflection_of(&[3, 4, 1, 2]));   // rotation
+        assert!(a.circular().is_rotation_or_reflection_of(&[2, 1, 4, 3]));   // rotation of reflection
+        assert!(!a.circular().is_rotation_or_reflection_of(&[1, 3, 2, 4]));  // neither
+    }
+
+    #[test]
+    fn rotation_offset_basic() {
+        let a = [10, 20, 30, 40];
+        assert_eq!(a.circular().rotation_offset(&[30, 40, 10, 20]), Some(2));
+        assert_eq!(a.circular().rotation_offset(&[10, 20, 30, 40]), Some(0));
+        assert_eq!(a.circular().rotation_offset(&[1, 2, 3, 4]), None);
+    }
+
+    #[test]
+    fn rotation_offset_length_mismatch() {
+        assert_eq!([1, 2, 3].circular().rotation_offset(&[1, 2]), None);
+    }
+
+    // ── Distance ───────────────────────────────────────────────────────
+
+    #[test]
+    fn hamming_distance_basic() {
+        let a = [1, 2, 3, 4];
+        let b = [1, 2, 0, 4];
+        assert_eq!(a.circular().hamming_distance(&b), 1);
+        assert_eq!(a.circular().hamming_distance(&a), 0);
+    }
+
+    #[test]
+    #[should_panic]
+    fn hamming_distance_length_mismatch_panics() {
+        let _ = [1, 2].circular().hamming_distance(&[1, 2, 3]);
+    }
+
+    #[test]
+    fn min_rotational_hamming_distance_basic() {
+        let a = [1, 2, 3, 4];
+        let b = [3, 4, 1, 2]; // rotation of a
+        assert_eq!(a.circular().min_rotational_hamming_distance(&b), 0);
+        assert_eq!(a.circular().min_rotational_hamming_distance(&a), 0);
+        let c = [3, 4, 1, 5]; // 1 off from a rotation
+        assert_eq!(a.circular().min_rotational_hamming_distance(&c), 1);
+    }
+
+    // ── contains_slice / index_of_slice ────────────────────────────────
+
+    #[test]
+    fn contains_slice_basic() {
+        let r = [1, 2, 3, 4, 5].circular();
+        assert!(r.contains_slice(&[2, 3, 4]));
+        assert!(r.contains_slice(&[5, 1, 2])); // wraps
+        assert!(!r.contains_slice(&[2, 4]));
+    }
+
+    #[test]
+    fn contains_slice_empty() {
+        assert!([1, 2, 3].circular().contains_slice(&[]));
+        let empty: [i32; 0] = [];
+        assert!(!empty.circular().contains_slice(&[1]));
+        assert!(empty.circular().contains_slice(&[]));
+    }
+
+    #[test]
+    fn index_of_slice_basic() {
+        let r = [1, 2, 3, 4, 5].circular();
+        assert_eq!(r.index_of_slice(&[3, 4], 0), Some(2));
+        assert_eq!(r.index_of_slice(&[5, 1], 0), Some(4)); // wraps
+        assert_eq!(r.index_of_slice(&[9], 0), None);
+    }
+
+    // ── Symmetry counts ────────────────────────────────────────────────
+
+    #[test]
+    fn rotational_symmetry_basic() {
+        assert_eq!([1, 2, 3, 4].circular().rotational_symmetry(), 1);
+        assert_eq!([1, 2, 1, 2].circular().rotational_symmetry(), 2);
+        assert_eq!([1, 1, 1, 1].circular().rotational_symmetry(), 4);
+    }
+
+    #[test]
+    fn rotational_symmetry_short() {
+        let empty: [i32; 0] = [];
+        assert_eq!(empty.circular().rotational_symmetry(), 1);
+        assert_eq!([5].circular().rotational_symmetry(), 1);
+    }
+
+    #[test]
+    fn symmetry_palindrome() {
+        // Palindrome has at least one reflectional symmetry axis.
+        assert!([1, 2, 3, 2, 1].circular().symmetry() >= 1);
+    }
+
+    #[test]
+    fn symmetry_empty() {
+        let empty: [i32; 0] = [];
+        assert_eq!(empty.circular().symmetry(), 0);
+    }
+}
+
+#[cfg(all(test, feature = "alloc"))]
+mod alloc_tests {
+    use super::*;
+    use alloc::vec;
+    use alloc::vec::Vec;
+
+    // ── Booth / canonical ──────────────────────────────────────────────
+
+    #[test]
+    fn canonical_index_basic() {
+        assert_eq!([3, 1, 2].circular().canonical_index(), 1);
+        assert_eq!([1, 2, 3].circular().canonical_index(), 0);
+        assert_eq!([2, 3, 0, 1].circular().canonical_index(), 2);
+    }
+
+    #[test]
+    fn canonical_index_short() {
+        let empty: [i32; 0] = [];
+        assert_eq!(empty.circular().canonical_index(), 0);
+        assert_eq!([7].circular().canonical_index(), 0);
+    }
+
+    #[test]
+    fn canonical_basic() {
+        assert_eq!([3, 1, 2].circular().canonical(), vec![1, 2, 3]);
+        assert_eq!([1, 2, 3].circular().canonical(), vec![1, 2, 3]);
+    }
+
+    #[test]
+    fn canonical_all_equal() {
+        assert_eq!([5, 5, 5].circular().canonical(), vec![5, 5, 5]);
+    }
+
+    #[test]
+    fn canonical_rotations_share_canonical() {
+        let a = [3, 1, 2];
+        let b = [1, 2, 3];
+        let c = [2, 3, 1];
+        assert_eq!(a.circular().canonical(), b.circular().canonical());
+        assert_eq!(b.circular().canonical(), c.circular().canonical());
+    }
+
+    #[test]
+    fn bracelet_basic() {
+        // Bracelet treats sequence and its reflection as equivalent.
+        let a = [3, 1, 2];
+        let b = [3, 2, 1]; // reflection of a at index 0 = [3, 2, 1]
+        assert_eq!(a.circular().bracelet(), b.circular().bracelet());
+    }
+
+    // ── Symmetry indices / axes ────────────────────────────────────────
+
+    #[test]
+    fn symmetry_indices_palindrome() {
+        let r = [1, 2, 3, 2, 1].circular();
+        assert!(!r.symmetry_indices().is_empty());
+    }
+
+    #[test]
+    fn symmetry_indices_none() {
+        let r = [1, 2, 3, 4].circular();
+        // Asymmetric ring has no reflectional symmetries
+        assert_eq!(r.symmetry_indices(), Vec::<usize>::new());
+    }
+
+    #[test]
+    fn symmetry_indices_empty() {
+        let empty: [i32; 0] = [];
+        assert_eq!(empty.circular().symmetry_indices(), Vec::<usize>::new());
+    }
+
+    #[test]
+    fn reflectional_symmetry_axes_count_matches_symmetry() {
+        let r = [1, 2, 1, 2].circular();
+        let axes = r.reflectional_symmetry_axes();
+        assert_eq!(axes.len(), r.symmetry());
+    }
+
+    // ── to_vec ─────────────────────────────────────────────────────────
+
+    #[test]
+    fn to_vec_basic() {
+        let r = [10, 20, 30].circular();
+        assert_eq!(r.to_vec(), vec![10, 20, 30]);
+        assert_eq!(r.rotate_right(1).to_vec(), vec![30, 10, 20]);
+        assert_eq!(r.reflect_at(0).to_vec(), vec![10, 30, 20]);
+    }
+
+    #[test]
+    fn to_vec_empty() {
+        let empty: [i32; 0] = [];
+        assert_eq!(empty.circular().to_vec(), Vec::<i32>::new());
+    }
+
+    // ── Chained: prototype's headline example ──────────────────────────
+
+    #[test]
+    fn rotations_map_canonical_index() {
+        let r = [3, 1, 2, 3, 1, 2].circular();
+        let indices: Vec<usize> = r.rotations().map(|v| v.canonical_index()).collect();
+        assert_eq!(indices, vec![1, 0, 2, 1, 0, 2]);
     }
 }
