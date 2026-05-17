@@ -60,7 +60,7 @@ use alloc::{vec, vec::Vec};
 
 mod circular;
 
-pub use circular::{AsCircular, Circular, CircularIter};
+pub use circular::{AsCircular, Circular, CircularIter, Enumerate};
 
 #[cfg(feature = "alloc")]
 mod iterators;
