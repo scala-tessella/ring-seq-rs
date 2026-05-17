@@ -6,128 +6,134 @@ Circular (ring) sequence operations for Rust slices.
 [![docs.rs](https://docs.rs/ring-seq/badge.svg)](https://docs.rs/ring-seq)
 [![License](https://img.shields.io/crates/l/ring-seq.svg)](https://github.com/scala-tessella/ring-seq-rs#license)
 
-`ring-seq` extends `[T]` — and by `Deref` coercion `Vec<T>`, arrays, and
-`Box<[T]>` — with operations that treat the sequence as **circular**: the
-element after the last wraps back to the first.
+Treat any `[T]`, `Vec<T>`, array, or `Box<[T]>` as a **circular** sequence
+— the element after the last wraps back to the first.
 
-Zero dependencies. Zero unsafe. `#[must_use]` on every method that returns a
-value.
+- Zero dependencies. Zero `unsafe`. `#![no_std]` with a default `alloc`
+  feature.
+- All transforms return lazy views or iterators; allocation is opt-in.
+- Single entry point: `slice.circular()` gives you a `Circular<T>`
+  wrapper that hosts every operation.
 
 ## Quick start
 
-Add to your `Cargo.toml`:
+```toml
+[dependencies]
+ring-seq = "0.3"
+```
+
+```rust
+use ring_seq::AsCircular;
+
+let r = [10, 20, 30].circular();
+
+// Indexing wraps in both directions
+assert_eq!(*r.apply(4), 20);
+assert_eq!(*r.apply(-1), 30);
+
+// Reindexed views — no allocation
+let rotated: Vec<_> = r.rotate_right(1).iter().copied().collect();
+assert_eq!(rotated, [30, 10, 20]);
+
+// Comparison up to rotation / reflection
+assert!(r.is_rotation_of(&[20, 30, 10]));
+assert!(r.is_reflection_of(&[10, 30, 20]));
+
+// Canonical (necklace) form — Booth's O(n)
+assert_eq!(r.canonical(), [10, 20, 30]);
+
+// Lazy iterators of views compose naturally
+let firsts: Vec<i32> = r.rotations().map(|v| *v.apply(0)).collect();
+assert_eq!(firsts, [10, 20, 30]);
+
+// Symmetry detection
+assert_eq!([0, 1, 0, 1].circular().rotational_symmetry(), 2);
+```
+
+## Operations on `Circular<T>`
+
+### Indexing & iteration
+
+| Method | Returns | Description |
+|---|---|---|
+| `apply(i)` | `&T` | Element at circular index (panics if empty) |
+| `index_from(i)` | `usize` | Normalize a circular index to `[0, len)` |
+| `iter()` | `CircularIter` | Walk the view's elements (lazy) |
+
+### Reindexed views (lazy)
+
+| Method | Returns | Description |
+|---|---|---|
+| `start_at(i)` | `Circular` | View starts at circular index `i` |
+| `rotate_left(step)` | `Circular` | Shift left by `step` (negative = right) |
+| `rotate_right(step)` | `Circular` | Shift right by `step` (negative = left) |
+| `reflect_at(i)` | `Circular` | Reflect around index `i` |
+
+### Bounded iteration (lazy)
+
+| Method | Returns | Description |
+|---|---|---|
+| `slice(from, to)` | `CircularIter` | `max(to - from, 0)` elements, wrapping |
+| `take_while(pred, from)` | `impl Iterator` | Prefix satisfying `pred` (≤ one lap) |
+| `drop_while(pred, from)` | `impl Iterator` | Remainder after the prefix |
+| `enumerate(from)` | `Enumerate` | `(&T, ring_index)` pairs |
+
+### Iterators of views (lazy)
+
+| Method | Yields | Description |
+|---|---|---|
+| `rotations()` | `Circular` × `n` | Every rotation |
+| `reflections()` | `Circular` × 2 | Original + `reflect_at(0)` |
+| `reversions()` | `Circular` × 2 | Original + reverse |
+| `rotations_and_reflections()` | `Circular` × `2n` | All dihedral variants |
+| `windows(size)` | `CircularIter` × `n` | Sliding windows, step 1 |
+| `chunks(size)` | `CircularIter` × `ceil(n/size)` | Non-overlapping chunks |
+
+### Comparison
+
+| Method | Description |
+|---|---|
+| `is_rotation_of(other)` | Same elements, possibly rotated? |
+| `is_reflection_of(other)` | Equals `self` or `self.reflect_at(0)` |
+| `is_reversion_of(other)` | Equals `self` or its reverse |
+| `is_rotation_or_reflection_of(other)` | Any dihedral variant |
+| `rotation_offset(other)` | `Some(k)` where `self.start_at(k) == other` |
+| `hamming_distance(other)` | Positional mismatches |
+| `min_rotational_hamming_distance(other)` | Minimum over all rotations |
+| `contains_slice(needle)` | Does `needle` appear circularly? |
+| `index_of_slice(needle, from)` | First circular index where `needle` matches |
+
+### Necklace & symmetry
+
+| Method | Returns | Notes |
+|---|---|---|
+| `canonical_index()` | `usize` | Index of lex-smallest rotation (Booth's *O(n)*; `alloc`) |
+| `canonical()` | `Vec<T>` | Lex-smallest rotation (`alloc`) |
+| `bracelet()` | `Vec<T>` | Lex-smallest under rotation + reflection (`alloc`) |
+| `rotational_symmetry()` | `usize` | Order of rotational symmetry |
+| `symmetry()` | `usize` | Number of reflectional axes |
+| `symmetry_indices()` | `Vec<usize>` | Shifts where the view equals its reverse (`alloc`) |
+| `reflectional_symmetry_axes()` | `Vec<(AxisLocation, AxisLocation)>` | Full axis geometry (`alloc`) |
+
+### Materialization
+
+| Method | Returns | Notes |
+|---|---|---|
+| `to_vec()` | `Vec<T>` | Materialize the view (`alloc`, `T: Clone`) |
+
+## `no_std`
 
 ```toml
 [dependencies]
-ring-seq = "0.2"
+ring-seq = { version = "0.3", default-features = false }
 ```
 
-Then import the trait and call methods on any slice:
-
-```rust
-use ring_seq::RingSeq;
-
-// Indexing wraps around
-assert_eq!(*[10, 20, 30].apply_o(4), 20);
-
-// Rotation produces a new Vec
-assert_eq!([0, 1, 2].rotate_right(1), [2, 0, 1]);
-
-// Comparison up to rotation
-assert!([0, 1, 2].is_rotation_of(&[2, 0, 1]));
-
-// Canonical (necklace) form for deduplication
-assert_eq!([2, 0, 1].canonical(), [0, 1, 2]);
-
-// Symmetry detection
-assert_eq!([0, 1, 0, 1].rotational_symmetry(), 2);
-```
-
-## Operations
-
-### Indexing
-
-| Method | Description |
-|---|---|
-| `index_from(i)` | Normalize a circular index to `[0, len)` |
-| `apply_o(i)` | Element at circular index (panics if empty) |
-
-### Transforming
-
-| Method | Description |
-|---|---|
-| `rotate_right(step)` | Rotate right by `step` (negative = left) |
-| `rotate_left(step)` | Rotate left by `step` (negative = right) |
-| `start_at(i)` | Rotate so index `i` is first |
-| `reflect_at(i)` | Reflect and rotate so index `i` is first |
-
-### Slicing
-
-| Method | Description |
-|---|---|
-| `slice_o(from, to)` | Circular interval (can exceed ring length) |
-| `contains_slice(s)` | Does the ring contain `s` circularly? |
-| `index_of_slice(s, from)` | First circular position of `s` |
-| `last_index_of_slice(s, end)` | Last circular position of `s` |
-| `segment_length(pred, from)` | Length of prefix satisfying `pred` |
-| `take_while(pred, from)` | Prefix satisfying `pred` |
-| `drop_while(pred, from)` | Remainder after prefix |
-| `span(pred, from)` | `(take_while, drop_while)` in one pass |
-
-### Iterating
-
-| Method | Description |
-|---|---|
-| `rotations()` | All `n` rotations (lazy) |
-| `reflections()` | Original + reflection (lazy) |
-| `reversions()` | Original + reversal (lazy) |
-| `rotations_and_reflections()` | All `2n` variants (lazy) |
-| `circular_windows(size, step)` | Sliding windows wrapping around |
-| `circular_chunks(size)` | Fixed-size circular groups |
-| `circular_enumerate(from)` | Elements paired with circular indices |
-
-### Comparing
-
-| Method | Description |
-|---|---|
-| `is_rotation_of(that)` | Same elements, possibly rotated? |
-| `is_reflection_of(that)` | Same elements, possibly reflected? |
-| `is_reversion_of(that)` | Same elements, possibly reversed? |
-| `is_rotation_or_reflection_of(that)` | Either of the above? |
-| `rotation_offset(that)` | `Some(k)` where `start_at(k) == that` |
-| `hamming_distance(that)` | Positional mismatches |
-| `min_rotational_hamming_distance(that)` | Minimum over all rotations |
-
-### Necklace
-
-| Method | Description |
-|---|---|
-| `canonical_index()` | Index of lex-smallest rotation (Booth's *O(n)*) |
-| `canonical()` | Lex-smallest rotation (necklace form) |
-| `bracelet()` | Lex-smallest under rotation + reflection |
-
-### Symmetry
-
-| Method | Description |
-|---|---|
-| `rotational_symmetry()` | Order of rotational symmetry |
-| `symmetry_indices()` | Shift values for reflectional symmetry |
-| `reflectional_symmetry_axes()` | Full axis geometry (`Vertex` / `Edge`) |
-| `symmetry()` | Number of reflectional symmetry axes |
-
-## Naming convention
-
-Every method on `RingSeq` is circular by definition, so most use plain
-Rust-idiomatic names. A few carry a distinguishing name to avoid shadowing
-standard-library methods:
-
-| This crate | Standard library |
-|---|---|
-| `apply_o` | `[]` indexing |
-| `slice_o` | `[a..b]` slicing |
-| `circular_windows` | `[T]::windows` |
-| `circular_chunks` | `[T]::chunks` |
-| `circular_enumerate` | `Iterator::enumerate` |
+Disabling the default `alloc` feature drops the methods that return owned
+collections (`canonical`, `bracelet`, `symmetry_indices`,
+`reflectional_symmetry_axes`, `to_vec`) and `canonical_index` (Booth's
+algorithm needs an internal `Vec`). Everything else — the `Circular`
+wrapper, every reindexed-view method, every iterator — depends only on
+`core`.
 
 ## Use cases
 
@@ -145,6 +151,7 @@ standard-library methods:
 ## Other languages
 
 The same library, adapted for the specific idiom, is available also for:
+
 - Python — [ring-seq-py](https://github.com/scala-tessella/ring-seq-py)
 - Scala — [ring-seq](https://github.com/scala-tessella/ring-seq)
 

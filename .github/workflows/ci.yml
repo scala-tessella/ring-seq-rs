@@ -68,3 +68,14 @@ jobs:
       - uses: dtolnay/rust-toolchain@1.63
       - uses: Swatinem/rust-cache@v2
       - run: cargo check
+
+  # ── no_std (core-only build, no alloc) ────────────────────────────────
+  no_std:
+    name: no_std (no default features)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - run: cargo build --no-default-features
+      - run: cargo check --no-default-features
