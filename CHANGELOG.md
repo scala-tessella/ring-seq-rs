@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- CI verifies the crate compiles for `wasm32-unknown-unknown` both with
+  and without the `alloc` feature. The library was already wasm-portable
+  by construction (no_std, zero deps, zero unsafe, no I/O); the CI guard
+  makes the support claim binding.
+
 ## [0.3.0] - 2026-05-17
 
 Full structural redesign. The `RingSeq` trait is gone; every circular

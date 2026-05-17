@@ -135,6 +135,9 @@ algorithm needs an internal `Vec`). Everything else — the `Circular`
 wrapper, every reindexed-view method, every iterator — depends only on
 `core`.
 
+CI verifies the crate compiles for `wasm32-unknown-unknown` both with and
+without `alloc`.
+
 ## Use cases
 
 - **Bioinformatics** — circular DNA/RNA sequence alignment and comparison
