@@ -334,6 +334,160 @@ impl<'a, T> Circular<'a, T> {
         let started = if self.ring.is_empty() { self } else { self.start_at(from) };
         Enumerate { view: started, pos: 0, remaining: started.ring.len() }
     }
+
+    // -----------------------------------------------------------------------
+    // Iterators of views — yield Circular<'a, T>
+    // -----------------------------------------------------------------------
+
+    /// Returns an iterator yielding each rotation of this view as a fresh
+    /// [`Circular`].
+    ///
+    /// For a non-empty ring of length `n` the iterator yields `n` items;
+    /// for an empty ring it yields one (empty) item. The `reflected` bit
+    /// of `self` is preserved by every yielded rotation.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use ring_seq::AsCircular;
+    ///
+    /// let r = [1, 2, 3].circular();
+    /// let starts: Vec<i32> = r.rotations().map(|v| *v.apply(0)).collect();
+    /// assert_eq!(starts, vec![1, 2, 3]);
+    /// ```
+    #[must_use]
+    pub fn rotations(self) -> Rotations<'a, T> {
+        let total = if self.ring.is_empty() { 1 } else { self.ring.len() };
+        Rotations { base: self, index: 0, total }
+    }
+
+    /// Returns an iterator yielding the view and its reflection at
+    /// position 0.
+    ///
+    /// For a non-empty ring the iterator yields two items; for an empty
+    /// ring it yields one. The first item is always `self`.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use ring_seq::AsCircular;
+    ///
+    /// let r = [1, 2, 3, 4].circular();
+    /// let count = r.reflections().count();
+    /// assert_eq!(count, 2);
+    /// ```
+    #[must_use]
+    pub fn reflections(self) -> Reflections<'a, T> {
+        Reflections { base: self, state: 0 }
+    }
+
+    /// Returns an iterator yielding the view and its reverse.
+    ///
+    /// "Reverse" here means walking the ring in the opposite direction
+    /// starting from position `len - 1` — equivalent to
+    /// `reflect_at(-1)`.
+    ///
+    /// For a non-empty ring the iterator yields two items; for an empty
+    /// ring it yields one.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use ring_seq::AsCircular;
+    ///
+    /// let r = [1, 2, 3].circular();
+    /// let last: Vec<_> = r.reversions()
+    ///     .map(|v| v.iter().copied().collect::<Vec<_>>())
+    ///     .collect();
+    /// assert_eq!(last, vec![vec![1, 2, 3], vec![3, 2, 1]]);
+    /// ```
+    #[must_use]
+    pub fn reversions(self) -> Reversions<'a, T> {
+        Reversions { base: self, state: 0 }
+    }
+
+    /// Returns an iterator yielding every rotation of this view followed
+    /// by every rotation of its reflection at position 0.
+    ///
+    /// For a non-empty ring of length `n` the iterator yields `2n` items;
+    /// for an empty ring it yields one.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use ring_seq::AsCircular;
+    ///
+    /// let r = [1, 2, 3].circular();
+    /// assert_eq!(r.rotations_and_reflections().count(), 6);
+    /// ```
+    #[must_use]
+    pub fn rotations_and_reflections(self) -> RotationsAndReflections<'a, T> {
+        let n = self.ring.len();
+        let total = if n == 0 { 1 } else { 2 * n };
+        let reflected = if n == 0 { self } else { self.reflect_at(0) };
+        RotationsAndReflections { base: self, reflected, index: 0, total, n }
+    }
+
+    /// Returns an iterator yielding every circular window of length `size`
+    /// (step 1) as a [`CircularIter`].
+    ///
+    /// For a non-empty ring of length `n` the iterator yields `n` windows;
+    /// for an empty ring it yields no windows.
+    ///
+    /// # Panics
+    ///
+    /// Panics if `size` is zero.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use ring_seq::AsCircular;
+    ///
+    /// let r = [1, 2, 3, 4].circular();
+    /// let windows: Vec<Vec<i32>> = r
+    ///     .windows(2)
+    ///     .map(|w| w.copied().collect())
+    ///     .collect();
+    /// assert_eq!(windows, vec![vec![1, 2], vec![2, 3], vec![3, 4], vec![4, 1]]);
+    /// ```
+    #[must_use]
+    pub fn windows(self, size: usize) -> Windows<'a, T> {
+        assert!(size > 0, "window size must be positive");
+        let total = if self.ring.is_empty() { 0 } else { self.ring.len() };
+        Windows { base: self, size, step: 1, index: 0, total }
+    }
+
+    /// Returns an iterator yielding non-overlapping circular chunks of
+    /// length `size` as [`CircularIter`]s.
+    ///
+    /// For a non-empty ring of length `n` the iterator yields `n` chunks
+    /// (step equal to `size`, wrapping); for an empty ring it yields none.
+    ///
+    /// # Panics
+    ///
+    /// Panics if `size` is zero.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use ring_seq::AsCircular;
+    ///
+    /// let r = [1, 2, 3, 4].circular();
+    /// let chunks: Vec<Vec<i32>> = r
+    ///     .chunks(2)
+    ///     .map(|c| c.copied().collect())
+    ///     .collect();
+    /// // Four starting positions (0, 2, 4≡0, 6≡2), each yielding 2 elements
+    /// assert_eq!(chunks.len(), 4);
+    /// assert_eq!(chunks[0], vec![1, 2]);
+    /// assert_eq!(chunks[1], vec![3, 4]);
+    /// ```
+    #[must_use]
+    pub fn chunks(self, size: usize) -> Windows<'a, T> {
+        assert!(size > 0, "chunk size must be positive");
+        let total = if self.ring.is_empty() { 0 } else { self.ring.len() };
+        Windows { base: self, size, step: size, index: 0, total }
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -425,6 +579,276 @@ impl<'a, T> Iterator for Enumerate<'a, T> {
 
 impl<T> ExactSizeIterator for Enumerate<'_, T> {}
 impl<T> FusedIterator for Enumerate<'_, T> {}
+
+// ---------------------------------------------------------------------------
+// Rotations — yields each rotation as a Circular view
+// ---------------------------------------------------------------------------
+
+/// Iterator over the rotations of a [`Circular`] view.
+///
+/// Created by [`Circular::rotations`]. Yields one [`Circular`] per
+/// starting position; preserves the `reflected` bit of the source view.
+#[derive(Debug)]
+pub struct Rotations<'a, T> {
+    base: Circular<'a, T>,
+    index: usize,
+    total: usize,
+}
+
+impl<T> Clone for Rotations<'_, T> {
+    fn clone(&self) -> Self {
+        Rotations { base: self.base, index: self.index, total: self.total }
+    }
+}
+
+impl<'a, T> Iterator for Rotations<'a, T> {
+    type Item = Circular<'a, T>;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        if self.index >= self.total {
+            return None;
+        }
+        let item = if self.base.ring.is_empty() {
+            self.base
+        } else {
+            self.base.start_at(self.index as isize)
+        };
+        self.index += 1;
+        Some(item)
+    }
+
+    fn size_hint(&self) -> (usize, Option<usize>) {
+        let r = self.total - self.index;
+        (r, Some(r))
+    }
+}
+
+impl<T> ExactSizeIterator for Rotations<'_, T> {}
+impl<T> FusedIterator for Rotations<'_, T> {}
+
+// ---------------------------------------------------------------------------
+// Reflections — yields the view and its reflection at position 0
+// ---------------------------------------------------------------------------
+
+/// Iterator yielding the source [`Circular`] and its [`reflect_at(0)`].
+///
+/// Created by [`Circular::reflections`].
+///
+/// [`reflect_at(0)`]: Circular::reflect_at
+#[derive(Debug)]
+pub struct Reflections<'a, T> {
+    base: Circular<'a, T>,
+    state: u8,
+}
+
+impl<T> Clone for Reflections<'_, T> {
+    fn clone(&self) -> Self {
+        Reflections { base: self.base, state: self.state }
+    }
+}
+
+impl<'a, T> Iterator for Reflections<'a, T> {
+    type Item = Circular<'a, T>;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        match self.state {
+            0 => {
+                self.state = if self.base.ring.is_empty() { 2 } else { 1 };
+                Some(self.base)
+            }
+            1 => {
+                self.state = 2;
+                Some(self.base.reflect_at(0))
+            }
+            _ => None,
+        }
+    }
+
+    fn size_hint(&self) -> (usize, Option<usize>) {
+        let r = match self.state {
+            0 => {
+                if self.base.ring.is_empty() {
+                    1
+                } else {
+                    2
+                }
+            }
+            1 => 1,
+            _ => 0,
+        };
+        (r, Some(r))
+    }
+}
+
+impl<T> ExactSizeIterator for Reflections<'_, T> {}
+impl<T> FusedIterator for Reflections<'_, T> {}
+
+// ---------------------------------------------------------------------------
+// Reversions — yields the view and its reverse
+// ---------------------------------------------------------------------------
+
+/// Iterator yielding the source [`Circular`] and its reverse
+/// (`reflect_at(-1)`).
+///
+/// Created by [`Circular::reversions`].
+#[derive(Debug)]
+pub struct Reversions<'a, T> {
+    base: Circular<'a, T>,
+    state: u8,
+}
+
+impl<T> Clone for Reversions<'_, T> {
+    fn clone(&self) -> Self {
+        Reversions { base: self.base, state: self.state }
+    }
+}
+
+impl<'a, T> Iterator for Reversions<'a, T> {
+    type Item = Circular<'a, T>;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        match self.state {
+            0 => {
+                self.state = if self.base.ring.is_empty() { 2 } else { 1 };
+                Some(self.base)
+            }
+            1 => {
+                self.state = 2;
+                Some(self.base.reflect_at(-1))
+            }
+            _ => None,
+        }
+    }
+
+    fn size_hint(&self) -> (usize, Option<usize>) {
+        let r = match self.state {
+            0 => {
+                if self.base.ring.is_empty() {
+                    1
+                } else {
+                    2
+                }
+            }
+            1 => 1,
+            _ => 0,
+        };
+        (r, Some(r))
+    }
+}
+
+impl<T> ExactSizeIterator for Reversions<'_, T> {}
+impl<T> FusedIterator for Reversions<'_, T> {}
+
+// ---------------------------------------------------------------------------
+// RotationsAndReflections — yields 2n views
+// ---------------------------------------------------------------------------
+
+/// Iterator yielding every rotation of the source followed by every
+/// rotation of its reflection at position 0.
+///
+/// Created by [`Circular::rotations_and_reflections`].
+#[derive(Debug)]
+pub struct RotationsAndReflections<'a, T> {
+    base: Circular<'a, T>,
+    reflected: Circular<'a, T>,
+    index: usize,
+    total: usize,
+    n: usize,
+}
+
+impl<T> Clone for RotationsAndReflections<'_, T> {
+    fn clone(&self) -> Self {
+        RotationsAndReflections {
+            base: self.base,
+            reflected: self.reflected,
+            index: self.index,
+            total: self.total,
+            n: self.n,
+        }
+    }
+}
+
+impl<'a, T> Iterator for RotationsAndReflections<'a, T> {
+    type Item = Circular<'a, T>;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        if self.index >= self.total {
+            return None;
+        }
+        if self.n == 0 {
+            self.index += 1;
+            return Some(self.base);
+        }
+        let item = if self.index < self.n {
+            self.base.start_at(self.index as isize)
+        } else {
+            self.reflected.start_at((self.index - self.n) as isize)
+        };
+        self.index += 1;
+        Some(item)
+    }
+
+    fn size_hint(&self) -> (usize, Option<usize>) {
+        let r = self.total - self.index;
+        (r, Some(r))
+    }
+}
+
+impl<T> ExactSizeIterator for RotationsAndReflections<'_, T> {}
+impl<T> FusedIterator for RotationsAndReflections<'_, T> {}
+
+// ---------------------------------------------------------------------------
+// Windows / Chunks — yield CircularIter<'a, T>
+// ---------------------------------------------------------------------------
+
+/// Iterator yielding circular windows (or chunks) of a [`Circular`] view
+/// as [`CircularIter`]s.
+///
+/// Created by [`Circular::windows`] (step 1) and [`Circular::chunks`]
+/// (step equal to the chunk size).
+#[derive(Debug)]
+pub struct Windows<'a, T> {
+    base: Circular<'a, T>,
+    size: usize,
+    step: usize,
+    index: usize,
+    total: usize,
+}
+
+impl<T> Clone for Windows<'_, T> {
+    fn clone(&self) -> Self {
+        Windows {
+            base: self.base,
+            size: self.size,
+            step: self.step,
+            index: self.index,
+            total: self.total,
+        }
+    }
+}
+
+impl<'a, T> Iterator for Windows<'a, T> {
+    type Item = CircularIter<'a, T>;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        if self.index >= self.total {
+            return None;
+        }
+        let start = (self.index * self.step) as isize;
+        let view = self.base.start_at(start);
+        let iter = CircularIter { view, pos: 0, remaining: self.size };
+        self.index += 1;
+        Some(iter)
+    }
+
+    fn size_hint(&self) -> (usize, Option<usize>) {
+        let r = self.total - self.index;
+        (r, Some(r))
+    }
+}
+
+impl<T> ExactSizeIterator for Windows<'_, T> {}
+impl<T> FusedIterator for Windows<'_, T> {}
 
 // ---------------------------------------------------------------------------
 // AsCircular
@@ -551,6 +975,7 @@ mod tests {
     // T does not need to be Clone for Circular to be Copy.
     #[test]
     fn copy_works_without_t_clone() {
+        #[allow(dead_code)]
         struct NoClone(i32);
         let arr = [NoClone(1), NoClone(2)];
         let r = arr.circular();
@@ -743,5 +1168,226 @@ mod tests {
         let r = [10, 20, 30, 40].circular();
         let it = r.enumerate(2);
         assert_eq!(it.len(), 4);
+    }
+
+    // ── Iterators of views ─────────────────────────────────────────────
+
+    #[test]
+    fn rotations_yields_n_views() {
+        let ring = [1, 2, 3, 4];
+        let r = ring.circular();
+        let firsts: [i32; 4] = {
+            let mut out = [0; 4];
+            for (s, v) in out.iter_mut().zip(r.rotations()) { *s = *v.apply(0); }
+            out
+        };
+        assert_eq!(firsts, [1, 2, 3, 4]);
+    }
+
+    #[test]
+    fn rotations_empty_yields_one() {
+        let empty: [i32; 0] = [];
+        assert_eq!(empty.circular().rotations().count(), 1);
+    }
+
+    #[test]
+    fn rotations_exact_size() {
+        let r = [1, 2, 3, 4, 5].circular();
+        let it = r.rotations();
+        assert_eq!(it.len(), 5);
+    }
+
+    #[test]
+    fn rotations_preserves_reflected() {
+        // Rotations of the reflected view should each be reflected too.
+        let r = [1, 2, 3].circular().reflect_at(0);
+        let firsts: [i32; 3] = {
+            let mut out = [0; 3];
+            for (s, v) in out.iter_mut().zip(r.rotations()) {
+                *s = *v.apply(0);
+            }
+            out
+        };
+        // Reflected of [1,2,3] at 0 = [1, 3, 2]. Its rotations start at 1, 3, 2.
+        assert_eq!(firsts, [1, 3, 2]);
+    }
+
+    #[test]
+    fn reflections_yields_two() {
+        let r = [1, 2, 3, 4].circular();
+        let count = r.reflections().count();
+        assert_eq!(count, 2);
+    }
+
+    #[test]
+    fn reflections_second_is_reflect_at_zero() {
+        let r = [1, 2, 3, 4].circular();
+        let mut it = r.reflections();
+        let first = it.next().unwrap();
+        let second = it.next().unwrap();
+        let first_v: [i32; 4] = into_array(first);
+        let second_v: [i32; 4] = into_array(second);
+        assert_eq!(first_v, [1, 2, 3, 4]);
+        assert_eq!(second_v, [1, 4, 3, 2]);
+    }
+
+    #[test]
+    fn reflections_empty_yields_one() {
+        let empty: [i32; 0] = [];
+        assert_eq!(empty.circular().reflections().count(), 1);
+    }
+
+    #[test]
+    fn reversions_yields_two() {
+        let r = [1, 2, 3].circular();
+        assert_eq!(r.reversions().count(), 2);
+    }
+
+    #[test]
+    fn reversions_second_is_reverse() {
+        let r = [1, 2, 3, 4].circular();
+        let mut it = r.reversions();
+        let first = it.next().unwrap();
+        let second = it.next().unwrap();
+        let first_v: [i32; 4] = into_array(first);
+        let second_v: [i32; 4] = into_array(second);
+        assert_eq!(first_v, [1, 2, 3, 4]);
+        assert_eq!(second_v, [4, 3, 2, 1]);
+    }
+
+    #[test]
+    fn rotations_and_reflections_yields_2n() {
+        let r = [1, 2, 3, 4].circular();
+        assert_eq!(r.rotations_and_reflections().count(), 8);
+    }
+
+    #[test]
+    fn rotations_and_reflections_distinct_views() {
+        // Distinct shapes for an aperiodic ring.
+        let r = [1, 2, 3, 4].circular();
+        let all: [[i32; 4]; 8] = {
+            let mut out = [[0; 4]; 8];
+            for (s, v) in out.iter_mut().zip(r.rotations_and_reflections()) {
+                *s = into_array(v);
+            }
+            out
+        };
+        assert_eq!(all[0], [1, 2, 3, 4]);
+        assert_eq!(all[1], [2, 3, 4, 1]);
+        assert_eq!(all[2], [3, 4, 1, 2]);
+        assert_eq!(all[3], [4, 1, 2, 3]);
+        // Reflected half: rotations of [1, 4, 3, 2] (reflect_at(0) of [1,2,3,4])
+        assert_eq!(all[4], [1, 4, 3, 2]);
+        assert_eq!(all[5], [4, 3, 2, 1]);
+        assert_eq!(all[6], [3, 2, 1, 4]);
+        assert_eq!(all[7], [2, 1, 4, 3]);
+    }
+
+    #[test]
+    fn rotations_and_reflections_empty_yields_one() {
+        let empty: [i32; 0] = [];
+        assert_eq!(empty.circular().rotations_and_reflections().count(), 1);
+    }
+
+    // ── Windows / Chunks ───────────────────────────────────────────────
+
+    fn collect_iter<const N: usize>(mut iter: CircularIter<'_, i32>) -> [i32; N] {
+        let mut out = [0; N];
+        for s in out.iter_mut() {
+            *s = *iter.next().unwrap();
+        }
+        out
+    }
+
+    #[test]
+    fn windows_basic() {
+        let r = [1, 2, 3, 4].circular();
+        let mut it = r.windows(2);
+        assert_eq!(collect_iter::<2>(it.next().unwrap()), [1, 2]);
+        assert_eq!(collect_iter::<2>(it.next().unwrap()), [2, 3]);
+        assert_eq!(collect_iter::<2>(it.next().unwrap()), [3, 4]);
+        assert_eq!(collect_iter::<2>(it.next().unwrap()), [4, 1]); // wraps
+        assert!(it.next().is_none());
+    }
+
+    #[test]
+    fn windows_count_equals_ring_len() {
+        let r = [1, 2, 3, 4, 5].circular();
+        assert_eq!(r.windows(2).count(), 5);
+        assert_eq!(r.windows(3).count(), 5);
+        assert_eq!(r.windows(5).count(), 5);
+    }
+
+    #[test]
+    fn windows_size_greater_than_ring() {
+        let r = [1, 2, 3].circular();
+        // Each window of size 5 wraps multiple times.
+        let mut it = r.windows(5);
+        assert_eq!(collect_iter::<5>(it.next().unwrap()), [1, 2, 3, 1, 2]);
+        assert_eq!(collect_iter::<5>(it.next().unwrap()), [2, 3, 1, 2, 3]);
+        assert_eq!(collect_iter::<5>(it.next().unwrap()), [3, 1, 2, 3, 1]);
+        assert!(it.next().is_none());
+    }
+
+    #[test]
+    fn windows_empty_ring() {
+        let empty: [i32; 0] = [];
+        assert_eq!(empty.circular().windows(3).count(), 0);
+    }
+
+    #[test]
+    #[should_panic]
+    fn windows_zero_size_panics() {
+        let _ = [1, 2, 3].circular().windows(0);
+    }
+
+    #[test]
+    fn chunks_basic() {
+        let r = [1, 2, 3, 4].circular();
+        let mut it = r.chunks(2);
+        assert_eq!(collect_iter::<2>(it.next().unwrap()), [1, 2]);
+        assert_eq!(collect_iter::<2>(it.next().unwrap()), [3, 4]);
+        // Step is `size`, so positions 0, 2, 4≡0, 6≡2 → still 4 items
+        assert_eq!(collect_iter::<2>(it.next().unwrap()), [1, 2]);
+        assert_eq!(collect_iter::<2>(it.next().unwrap()), [3, 4]);
+        assert!(it.next().is_none());
+    }
+
+    #[test]
+    fn chunks_empty_ring() {
+        let empty: [i32; 0] = [];
+        assert_eq!(empty.circular().chunks(2).count(), 0);
+    }
+
+    #[test]
+    #[should_panic]
+    fn chunks_zero_size_panics() {
+        let _ = [1, 2, 3].circular().chunks(0);
+    }
+
+    // ── Chained operations ─────────────────────────────────────────────
+
+    #[test]
+    fn chained_rotations_first_element() {
+        let r = [3, 1, 2].circular();
+        let firsts: [i32; 3] = {
+            let mut out = [0; 3];
+            for (s, v) in out.iter_mut().zip(r.rotations()) {
+                *s = *v.apply(0);
+            }
+            out
+        };
+        assert_eq!(firsts, [3, 1, 2]);
+    }
+
+    #[test]
+    fn chained_windows_count_satisfying() {
+        let r = [1, 2, 3, 4, 5].circular();
+        // Count windows whose first element is even
+        let n = r.windows(2).filter(|w| {
+            let mut clone = w.clone();
+            clone.next().map_or(false, |x| x % 2 == 0)
+        }).count();
+        assert_eq!(n, 2); // windows starting at 2 and 4
     }
 }

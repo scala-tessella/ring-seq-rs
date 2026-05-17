@@ -62,8 +62,10 @@ impl<T> AsCircular<T> for [T] { /* ... */ }
   `rotate_left`, `start_at`, `reflect_at`, `slice`.
 - **Element iteration**: `iter() -> CircularIter<'a, T>` yielding `&'a T`.
 - **Iterators of views** (return iterators yielding `Circular<'a, T>`):
-  `rotations`, `reflections`, `reversions`, `rotations_and_reflections`,
-  `windows`, `chunks`.
+  `rotations`, `reflections`, `reversions`, `rotations_and_reflections`.
+- **Sliding iterators** (return iterators yielding `CircularIter<'a, T>`):
+  `windows`, `chunks`. See "Alternatives considered" for why these yield a
+  bounded element iterator rather than a `Circular`.
 - **Predicate-bounded**: `take_while`, `drop_while`, `enumerate`.
 - **Scalar queries**: `apply`, `is_rotation_of`, `is_reflection_of`,
   `canonical_index`, `bracelet_index`.
@@ -152,6 +154,19 @@ preferable and the `.collect()` falls away.
 - **Separate `ReflectedView` type instead of a `reflected: bool` flag.**
   Doubles the surface area for no semantic gain; the prototype's two extra
   branches in `map_index` are cheaper and keep the API uniform.
+- **`windows` / `chunks` yielding `Circular<'a, T>` of window length.**
+  Considered during initial design and noted as needing a pressure test.
+  During implementation we ruled it out: it would require adding a `len`
+  field to `Circular` and propagating it through every existing method
+  (`apply`, `iter`, `start_at`, `reflect_at`, `map_index`), with the
+  reflected-view math gaining an extra `% len` step. The benefit — "every
+  yielded item supports every wrapper method" — is mostly theoretical for
+  windows, since a window is conceptually a sub-range, not a smaller ring.
+  Calling `canonical_index` on a 3-element window of a 7-element ring is
+  not meaningfully different from calling it on a `Vec<T>` of length 3.
+  We chose `CircularIter` instead: simpler, allocation-free, and the rare
+  caller who needs `Circular`-style methods on a window can `.collect()`
+  to a Vec and call `.circular()` on it.
 
 ## Validation
 
