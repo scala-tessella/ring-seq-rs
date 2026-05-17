@@ -1,6 +1,6 @@
 # ADR 0001 — Circular wrapper API and `no_std` support
 
-- **Status:** Proposed
+- **Status:** Accepted
 - **Date:** 2026-05-17
 - **Target release:** v0.3.0
 
@@ -168,13 +168,3 @@ preferable and the `.collect()` falls away.
   caller who needs `Circular`-style methods on a window can `.collect()`
   to a Vec and call `.circular()` on it.
 
-## Validation
-
-- `examples/wrapper_prototype.rs` — split-type prototype.
-- `examples/wrapper_prototype_unified.rs` — unified prototype. Passes
-  algebraic identity tests: `reflect_at(i).reflect_at(i) == id`,
-  `rotate_right(k).reflect_at(0) == reflect_at(0).rotate_left(k)`,
-  `rotations_and_reflections` yields 2n distinct views, empty-ring cases
-  do not panic. Surfaced the `T: Clone` derive trap.
-
-Both will be removed when the production implementation lands.
