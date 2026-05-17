@@ -1,5 +1,7 @@
 //! Iterator types returned by [`RingSeq`](crate::RingSeq) methods.
 
+use alloc::{vec, vec::Vec};
+
 /// Sliding windows over a circular sequence.
 ///
 /// Created by [`RingSeq::circular_windows`](crate::RingSeq::circular_windows)

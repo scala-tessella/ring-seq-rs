@@ -50,8 +50,22 @@
 //! If you need to force the circular variant on a `&mut` slice, call
 //! `.as_ref()` or reborrow as `&*slice` first.
 
+#![no_std]
+
+#[cfg(feature = "alloc")]
+extern crate alloc;
+
+#[cfg(feature = "alloc")]
+use alloc::{vec, vec::Vec};
+
+mod circular;
+
+pub use circular::{AsCircular, Circular, CircularIter};
+
+#[cfg(feature = "alloc")]
 mod iterators;
 
+#[cfg(feature = "alloc")]
 pub use iterators::{Reflections, Reversions, Rotations, RotationsAndReflections, SlidingO};
 
 // ============================================================================
@@ -112,6 +126,7 @@ impl AxisLocation {
 /// ```
 /// use ring_seq::RingSeq;
 /// ```
+#[cfg(feature = "alloc")]
 pub trait RingSeq<T> {
     // ── Indexing ────────────────────────────────────────────────────────
 
@@ -755,6 +770,7 @@ pub trait RingSeq<T> {
 // Implementation
 // ============================================================================
 
+#[cfg(feature = "alloc")]
 impl<T> RingSeq<T> for [T] {
     // ── Indexing ────────────────────────────────────────────────────────
 
@@ -1294,6 +1310,7 @@ impl<T> RingSeq<T> for [T] {
 /// Tests whether `that` appears as a rotation of `ring`, using the
 /// "concatenate and search" technique: any rotation of `ring` is a contiguous
 /// substring of `ring ++ ring[..n-1]`.
+#[cfg(feature = "alloc")]
 fn contains_as_rotation<T: PartialEq>(ring: &[T], that: &[T]) -> bool {
     if ring.is_empty() {
         return true;
@@ -1313,6 +1330,7 @@ fn contains_as_rotation<T: PartialEq>(ring: &[T], that: &[T]) -> bool {
 
 /// Booth's O(n) algorithm for finding the starting index of the
 /// lexicographically smallest rotation.
+#[cfg(feature = "alloc")]
 #[allow(
     clippy::cast_sign_loss,
     clippy::cast_possible_wrap,
@@ -1350,9 +1368,12 @@ fn booth_least_rotation<T: Ord>(s: &[T]) -> usize {
 // Tests
 // ============================================================================
 
-#[cfg(test)]
+#[cfg(all(test, feature = "alloc"))]
 mod tests {
     use super::*;
+    use alloc::boxed::Box;
+    use alloc::vec;
+    use alloc::vec::Vec;
 
     // ── Indexing ────────────────────────────────────────────────────────
 

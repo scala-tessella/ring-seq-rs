@@ -13,4 +13,11 @@ categories = ["algorithms", "data-structures"]
 rust-version = "1.63"
 exclude = [".github/", ".idea/", ".claude/"]
 
+[features]
+default = ["alloc"]
+# Enables the Vec-returning convenience methods on `Circular` and the
+# legacy `RingSeq` trait. Without this feature, only the allocation-free
+# core (the `Circular` wrapper and its element iterator) is available.
+alloc = []
+
 [dependencies]
