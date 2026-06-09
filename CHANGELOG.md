@@ -22,6 +22,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   0..=4 over a ternary alphabet (and 5..=6 binary) is checked under
   every reachable `(offset, reflected)` view against naive reference
   implementations of all operations.
+- Exact-geometry verification for `reflectional_symmetry_axes`
+  (previously only the axis *count* was tested): unit tests pin the
+  axes of known shapes, and the exhaustive suite derives every axis
+  independently from the fixed points of its reflection map — vertices
+  where `2i = k (mod n)`, edge midpoints where `2i + 1 = k (mod n)`.
 - CI verifies the crate compiles for `wasm32-unknown-unknown` both with
   and without the `alloc` feature. The library was already wasm-portable
   by construction (no_std, zero deps, zero unsafe, no I/O); the CI guard

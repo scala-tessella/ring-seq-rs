@@ -2441,6 +2441,46 @@ mod alloc_tests {
         assert_eq!(axes.len(), r.symmetry());
     }
 
+    #[test]
+    fn reflectional_symmetry_axes_square_geometry() {
+        use crate::AxisLocation::{Edge, Vertex};
+        // A square of equal elements has all four axes of the dihedral
+        // group: two vertex-vertex, two edge-edge.
+        let axes = [7, 7, 7, 7].circular().reflectional_symmetry_axes();
+        assert_eq!(axes.len(), 4);
+        assert!(axes.contains(&(Vertex(0), Vertex(2))));
+        assert!(axes.contains(&(Vertex(1), Vertex(3))));
+        assert!(axes.contains(&(Edge(0, 1), Edge(2, 3))));
+        assert!(axes.contains(&(Edge(1, 2), Edge(3, 0))));
+    }
+
+    #[test]
+    fn reflectional_symmetry_axes_odd_palindrome_geometry() {
+        use crate::AxisLocation::{Edge, Vertex};
+        // Pentagon [1,2,3,2,1]: the single axis passes through the `3`
+        // at vertex 2 and the midpoint of the opposite edge (4, 0).
+        let axes = [1, 2, 3, 2, 1].circular().reflectional_symmetry_axes();
+        assert_eq!(axes, vec![(Vertex(2), Edge(4, 0))]);
+    }
+
+    #[test]
+    fn reflectional_symmetry_axes_vertex_only_geometry() {
+        use crate::AxisLocation::Vertex;
+        // [0,1,0,1]: only the two vertex-vertex axes survive the labels
+        // (edge axes would swap a 0 with a 1).
+        let axes = [0, 1, 0, 1].circular().reflectional_symmetry_axes();
+        assert_eq!(axes, vec![(Vertex(1), Vertex(3)), (Vertex(0), Vertex(2))]);
+    }
+
+    #[test]
+    fn reflectional_symmetry_axes_edge_only_geometry() {
+        use crate::AxisLocation::Edge;
+        // [1,1,2,2]: one axis, through the midpoints of the edges that
+        // join the equal pairs.
+        let axes = [1, 1, 2, 2].circular().reflectional_symmetry_axes();
+        assert_eq!(axes, vec![(Edge(0, 1), Edge(2, 3))]);
+    }
+
     // ── to_vec ─────────────────────────────────────────────────────────
 
     #[test]

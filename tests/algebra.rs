@@ -283,12 +283,77 @@ fn check_necklace_and_symmetry(v: Circular<'_, i32>, exp: &[i32]) {
     check_alloc_ops(v, exp);
 }
 
+/// Sort key for an axis location: vertices before edges, then by index.
+#[cfg(feature = "alloc")]
+type LocKey = (u8, usize, usize);
+
+#[cfg(feature = "alloc")]
+fn loc_key(loc: &ring_seq::AxisLocation, n: usize) -> LocKey {
+    match *loc {
+        ring_seq::AxisLocation::Vertex(v) => {
+            assert!(v < n);
+            (0, v, v)
+        }
+        ring_seq::AxisLocation::Edge(i, j) => {
+            // Documented invariant: an edge joins consecutive indices.
+            assert_eq!(j, (i + 1) % n);
+            (1, i, j)
+        }
+    }
+}
+
+/// Independent axis geometry: the reflection `i -> (k - i) mod n` fixes
+/// the vertices with `2i = k (mod n)` and the midpoints of the edges
+/// `(j, j+1)` with `2j + 1 = k (mod n)`. Every axis crosses the ring in
+/// exactly two such locations.
+#[cfg(feature = "alloc")]
+fn naive_axes(exp: &[i32]) -> Vec<(LocKey, LocKey)> {
+    let n = exp.len();
+    let mut out = Vec::new();
+    if n == 0 {
+        return out;
+    }
+    for k in 0..n {
+        if (0..n).all(|i| exp[i] == exp[m(k as isize - i as isize, n)]) {
+            let mut locs = Vec::new();
+            for i in 0..n {
+                if (2 * i) % n == k {
+                    locs.push((0u8, i, i));
+                }
+                if (2 * i + 1) % n == k {
+                    locs.push((1u8, i, (i + 1) % n));
+                }
+            }
+            assert_eq!(locs.len(), 2, "an axis must cross the ring twice");
+            locs.sort_unstable();
+            out.push((locs[0], locs[1]));
+        }
+    }
+    out.sort_unstable();
+    out
+}
+
 #[cfg(feature = "alloc")]
 fn check_alloc_ops(v: Circular<'_, i32>, exp: &[i32]) {
     let n = exp.len();
     assert_eq!(v.to_vec(), exp);
     assert_eq!(v.symmetry_indices().len(), v.symmetry());
-    assert_eq!(v.reflectional_symmetry_axes().len(), v.symmetry());
+
+    // Axis locations must match the fixed points of each symmetric
+    // reflection, as an unordered set of unordered pairs.
+    let mut got: Vec<_> = v
+        .reflectional_symmetry_axes()
+        .iter()
+        .map(|(a, b)| {
+            let mut pair = [loc_key(a, n), loc_key(b, n)];
+            pair.sort_unstable();
+            (pair[0], pair[1])
+        })
+        .collect();
+    got.sort_unstable();
+    assert_eq!(got, naive_axes(exp));
+    assert_eq!(got.len(), v.symmetry());
+
     if n > 0 {
         let canon = (0..n).map(|k| rot(exp, k)).min().unwrap();
         assert_eq!(v.canonical(), canon);
