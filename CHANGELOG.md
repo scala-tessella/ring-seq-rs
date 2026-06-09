@@ -7,12 +7,36 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- `index_of_slice` returned wrong results on rotated or reflected views:
+  it mapped `from` into the underlying-slice frame and then re-applied
+  the view transform, double-applying the offset. The search start, the
+  returned position, and the empty-needle result are now all consistently
+  view positions normalized to `[0, len)`. Fresh views (`.circular()`
+  with no transform) were unaffected.
+- The first doc line of `symmetry` claimed it returns an iterator; it
+  returns the axis count.
+- The crate-root quick-start doctest did not compile under
+  `--no-default-features` (it calls the alloc-gated `canonical`); it is
+  now compiled only when `alloc` is on and rendered unchanged either way.
+
+### Performance
+
+- `min_rotational_hamming_distance` again abandons a rotation as soon as
+  its running mismatch count reaches the best so far (the short-circuit
+  introduced in 0.2.0 was lost in the 0.3.0 rewrite).
+
 ### Added
 
 - CI verifies the crate compiles for `wasm32-unknown-unknown` both with
   and without the `alloc` feature. The library was already wasm-portable
   by construction (no_std, zero deps, zero unsafe, no I/O); the CI guard
   makes the support claim binding.
+- CI now also runs the test suite with `--no-default-features` (the
+  core-only tests were previously compiled but never executed), lints
+  examples and tests via `clippy --all-targets`, and checks the
+  no-`alloc` shape at the 1.63 MSRV.
 
 ## [0.3.0] - 2026-05-17
 

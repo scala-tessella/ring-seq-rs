@@ -6,6 +6,11 @@
 //!   * reversed  — worst case, distance close to `n`
 //!
 //! Run with: `cargo run --release --example bench_min_rotational_hamming`.
+//!
+//! Note: this example needs Rust 1.66+ for `std::hint::black_box`. The
+//! library itself keeps its 1.63 MSRV; examples are dev-only targets and
+//! are never built by crate consumers.
+#![allow(clippy::incompatible_msrv)]
 
 use std::hint::black_box;
 use std::time::Instant;

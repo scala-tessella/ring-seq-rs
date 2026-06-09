@@ -290,7 +290,9 @@ impl<'a, T> Circular<'a, T> {
                 remaining: 0,
             };
         }
-        let count = (to - from) as usize;
+        // `to > from` holds here, so the mathematical difference fits in
+        // usize even when `to - from` would overflow isize.
+        let count = to.wrapping_sub(from) as usize;
         let started = self.start_at(from);
         CircularIter {
             view: started,
@@ -661,12 +663,21 @@ impl<'a, T> Circular<'a, T> {
         }
         let mut best = usize::MAX;
         for rot in self.rotations() {
-            let count = rot.iter().zip(other.iter()).filter(|(a, b)| a != b).count();
+            // Abandon a rotation as soon as it cannot beat the best so far.
+            let mut count = 0;
+            for (a, b) in rot.iter().zip(other.iter()) {
+                if a != b {
+                    count += 1;
+                    if count >= best {
+                        break;
+                    }
+                }
+            }
             if count < best {
                 best = count;
-            }
-            if best == 0 {
-                break;
+                if best == 0 {
+                    break;
+                }
             }
         }
         best
@@ -692,26 +703,25 @@ impl<'a, T> Circular<'a, T> {
         (0..n).any(|start| (0..m).all(|j| *self.apply((start + j) as isize) == needle[j]))
     }
 
-    /// Returns the starting circular index at which `needle` appears, or
-    /// `None` if it does not. Searches forward from `from`.
+    /// Returns the view position (normalized to `[0, len)`) at which
+    /// `needle` first appears, or `None` if it does not. Searches forward
+    /// from position `from`, wrapping around the seam.
+    ///
+    /// An empty `needle` matches immediately at `from` (normalized).
     #[must_use]
     pub fn index_of_slice(self, needle: &[T], from: isize) -> Option<usize>
     where
         T: PartialEq,
     {
-        if needle.is_empty() {
-            return if self.ring.is_empty() {
-                Some(0)
-            } else {
-                Some(self.index_from(from))
-            };
-        }
         if self.ring.is_empty() {
-            return None;
+            return if needle.is_empty() { Some(0) } else { None };
         }
         let n = self.ring.len();
+        let start = from.rem_euclid(n as isize) as usize;
+        if needle.is_empty() {
+            return Some(start);
+        }
         let m = needle.len();
-        let start = self.index_from(from);
         (0..n)
             .map(|k| (start + k) % n)
             .find(|&i| (0..m).all(|j| *self.apply((i + j) as isize) == needle[j]))
@@ -741,9 +751,9 @@ impl<'a, T> Circular<'a, T> {
         n / smallest.unwrap_or(n)
     }
 
-    /// Returns an iterator over the shifts at which this view equals its
-    /// own reverse rotated by that shift — i.e., the count of reflectional
-    /// symmetry axes (without allocating the indices themselves).
+    /// Returns the number of reflectional symmetry axes — the count of
+    /// shifts at which this view equals its own reverse rotated by that
+    /// shift (without allocating the indices themselves).
     ///
     /// Use [`symmetry_indices`](Self::symmetry_indices) (alloc-gated) if
     /// you need the actual indices.
@@ -2062,6 +2072,42 @@ mod tests {
         assert_eq!(r.index_of_slice(&[3, 4], 0), Some(2));
         assert_eq!(r.index_of_slice(&[5, 1], 0), Some(4)); // wraps
         assert_eq!(r.index_of_slice(&[9], 0), None);
+    }
+
+    // Positions returned (and searched from) are view positions, not
+    // underlying-slice indices. Regression tests: the original
+    // implementation mapped `from` into the underlying frame and so
+    // double-applied the offset on any transformed view.
+
+    #[test]
+    fn index_of_slice_on_rotated_view() {
+        // view = [1, 1, 0, 0]
+        let v = [0, 1, 1, 0].circular().rotate_left(1);
+        assert_eq!(v.index_of_slice(&[1], 0), Some(0));
+        assert_eq!(v.index_of_slice(&[1], 1), Some(1));
+        assert_eq!(v.index_of_slice(&[1], 2), Some(0)); // wraps past the seam
+        assert_eq!(v.index_of_slice(&[0, 0], 0), Some(2));
+        assert_eq!(v.index_of_slice(&[0, 1], 0), Some(3)); // wrapping match
+    }
+
+    #[test]
+    fn index_of_slice_on_reflected_view() {
+        // reflect_at(0) of [10, 20, 30, 40] = [10, 40, 30, 20]
+        let v = [10, 20, 30, 40].circular().reflect_at(0);
+        assert_eq!(v.index_of_slice(&[40, 30], 0), Some(1));
+        assert_eq!(v.index_of_slice(&[20], 0), Some(3));
+        assert_eq!(v.index_of_slice(&[20, 10], 0), Some(3)); // wrapping match
+    }
+
+    #[test]
+    fn index_of_slice_empty_needle_returns_view_position() {
+        let v = [10, 20, 30, 40, 50].circular().rotate_left(2);
+        assert_eq!(v.index_of_slice(&[], 0), Some(0));
+        assert_eq!(v.index_of_slice(&[], 7), Some(2));
+        assert_eq!(v.index_of_slice(&[], -1), Some(4));
+        let empty: [i32; 0] = [];
+        assert_eq!(empty.circular().index_of_slice(&[], 3), Some(0));
+        assert_eq!(empty.circular().index_of_slice(&[1], 0), None);
     }
 
     // ── Symmetry counts ────────────────────────────────────────────────

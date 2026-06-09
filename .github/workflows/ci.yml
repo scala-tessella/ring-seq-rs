@@ -31,7 +31,8 @@ jobs:
         with:
           components: clippy
       - uses: Swatinem/rust-cache@v2
-      - run: cargo clippy -- -D warnings
+      - run: cargo clippy --all-targets -- -D warnings
+      - run: cargo clippy --no-default-features -- -D warnings
 
   # ── Test ──────────────────────────────────────────────────────────────
   test:
@@ -46,6 +47,7 @@ jobs:
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
       - run: cargo test
+      - run: cargo test --no-default-features
 
   # ── Doc tests + doc build ─────────────────────────────────────────────
   docs:
@@ -60,6 +62,8 @@ jobs:
       - run: cargo doc --no-deps
 
   # ── MSRV ──────────────────────────────────────────────────────────────
+  # Library only: examples are dev-only targets and may need newer Rust
+  # (bench_min_rotational_hamming uses `black_box`, stable since 1.66).
   msrv:
     name: MSRV (1.63)
     runs-on: ubuntu-latest
@@ -68,6 +72,7 @@ jobs:
       - uses: dtolnay/rust-toolchain@1.63
       - uses: Swatinem/rust-cache@v2
       - run: cargo check
+      - run: cargo check --no-default-features
 
   # ── no_std (core-only build, no alloc) ────────────────────────────────
   no_std:

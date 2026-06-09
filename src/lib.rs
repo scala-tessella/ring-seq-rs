@@ -7,7 +7,10 @@
 //!
 //! # Quick start
 //!
-//! ```
+// The example calls alloc-gated methods (`canonical`), so only compile it
+// as a doctest when the feature is on; render it unchanged either way.
+#![cfg_attr(feature = "alloc", doc = " ```")]
+#![cfg_attr(not(feature = "alloc"), doc = " ```ignore")]
 //! use ring_seq::AsCircular;
 //!
 //! let r = [10, 20, 30].circular();
