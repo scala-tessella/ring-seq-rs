@@ -27,7 +27,7 @@
 //! assert!(r.is_rotation_of(&[20, 30, 10]));
 //! assert!(r.is_reflection_of(&[10, 30, 20]));
 //!
-//! // Canonical (necklace) form — uses Booth's O(n)
+//! // Canonical (necklace) form — O(n) minimal rotation
 //! assert_eq!(r.canonical(), vec![10, 20, 30]);
 //!
 //! // Lazy iterators of views
@@ -37,14 +37,15 @@
 //!
 //! # `no_std`
 //!
-//! The crate is `#![no_std]`. The default `alloc` feature enables the
+//! The crate is `#![no_std]`. The default `alloc` feature enables only the
 //! methods that return owned collections ([`Circular::to_vec`],
 //! [`Circular::canonical`], [`Circular::bracelet`],
 //! [`Circular::symmetry_indices`],
-//! [`Circular::reflectional_symmetry_axes`]) and the implementation of
-//! [`Circular::canonical_index`] (Booth's algorithm allocates internally).
-//! With `--no-default-features` the wrapper and its element/view iterators
-//! remain available and depend only on `core`.
+//! [`Circular::reflectional_symmetry_axes`]).
+//! With `--no-default-features` everything else — the wrapper, its
+//! element/view iterators, and all scalar queries including
+//! [`Circular::canonical_index`] — remains available and depends only on
+//! `core`.
 
 #![no_std]
 
@@ -54,7 +55,7 @@ extern crate alloc;
 mod circular;
 
 pub use circular::{
-    AsCircular, Circular, CircularIter, Enumerate, Reflections, Reversions, Rotations,
+    AsCircular, Chunks, Circular, CircularIter, Enumerate, Reflections, Reversions, Rotations,
     RotationsAndReflections, Windows,
 };
 

@@ -39,7 +39,7 @@ assert_eq!(rotated, [30, 10, 20]);
 assert!(r.is_rotation_of(&[20, 30, 10]));
 assert!(r.is_reflection_of(&[10, 30, 20]));
 
-// Canonical (necklace) form — Booth's O(n)
+// Canonical (necklace) form — O(n) minimal rotation
 assert_eq!(r.canonical(), [10, 20, 30]);
 
 // Lazy iterators of views compose naturally
@@ -56,9 +56,13 @@ assert_eq!([0, 1, 0, 1].circular().rotational_symmetry(), 2);
 
 | Method | Returns | Description |
 |---|---|---|
-| `apply(i)` | `&T` | Element at circular index (panics if empty) |
+| `apply(i)` / `r[i]` | `&T` | Element at circular index (panics if empty) |
+| `get(i)` | `Option<&T>` | Non-panicking `apply` |
 | `index_from(i)` | `usize` | Normalize a circular index to `[0, len)` |
-| `iter()` | `CircularIter` | Walk the view's elements (lazy) |
+| `iter()` | `CircularIter` | Walk the view's elements (lazy, double-ended) |
+
+`Circular` also implements `IntoIterator`, so `for x in ring.circular()`
+walks the view directly.
 
 ### Reindexed views (lazy)
 
@@ -101,13 +105,16 @@ assert_eq!([0, 1, 0, 1].circular().rotational_symmetry(), 2);
 | `hamming_distance(other)` | Positional mismatches |
 | `min_rotational_hamming_distance(other)` | Minimum over all rotations |
 | `contains_slice(needle)` | Does `needle` appear circularly? |
-| `index_of_slice(needle, from)` | First circular index where `needle` matches |
+| `index_of_slice(needle, from)` | First view position where `needle` matches |
+
+The rotation/needle searches and symmetry counts are intentionally
+simple quadratic scans (`O(n·m)` / `O(n²)`); `canonical_index` is `O(n)`.
 
 ### Necklace & symmetry
 
 | Method | Returns | Notes |
 |---|---|---|
-| `canonical_index()` | `usize` | Index of lex-smallest rotation (Booth's *O(n)*; `alloc`) |
+| `canonical_index()` | `usize` | Index of lex-smallest rotation (*O(n)* time, *O(1)* space) |
 | `canonical()` | `Vec<T>` | Lex-smallest rotation (`alloc`) |
 | `bracelet()` | `Vec<T>` | Lex-smallest under rotation + reflection (`alloc`) |
 | `rotational_symmetry()` | `usize` | Order of rotational symmetry |
@@ -128,12 +135,11 @@ assert_eq!([0, 1, 0, 1].circular().rotational_symmetry(), 2);
 ring-seq = { version = "0.3", default-features = false }
 ```
 
-Disabling the default `alloc` feature drops the methods that return owned
-collections (`canonical`, `bracelet`, `symmetry_indices`,
-`reflectional_symmetry_axes`, `to_vec`) and `canonical_index` (Booth's
-algorithm needs an internal `Vec`). Everything else — the `Circular`
-wrapper, every reindexed-view method, every iterator — depends only on
-`core`.
+Disabling the default `alloc` feature drops only the methods that return
+owned collections (`canonical`, `bracelet`, `symmetry_indices`,
+`reflectional_symmetry_axes`, `to_vec`). Everything else — the `Circular`
+wrapper, every reindexed-view method, every iterator, and every scalar
+query including `canonical_index` — depends only on `core`.
 
 CI verifies the crate compiles for `wasm32-unknown-unknown` both with and
 without `alloc`.

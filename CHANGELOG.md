@@ -7,6 +7,37 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- `Circular` implements `IntoIterator` (by value and by reference), so
+  `for x in ring.circular()` works directly.
+- `Circular::get(i)` — the non-panicking companion to `apply`.
+- `Circular` implements `Index<isize>`: `ring.circular()[i]` wraps in
+  both directions like `apply`.
+- `CircularIter` is now `DoubleEndedIterator` (`.rev()` walks the view
+  backward) and overrides `nth`, `count`, and `last` to run in O(1).
+- `Chunks` type alias for the iterator returned by `chunks` (same shape
+  as `Windows`, stepping by the chunk size).
+- Exhaustive property suite (`tests/algebra.rs`): every ring of length
+  0..=4 over a ternary alphabet (and 5..=6 binary) is checked under
+  every reachable `(offset, reflected)` view against naive reference
+  implementations of all operations.
+- CI verifies the crate compiles for `wasm32-unknown-unknown` both with
+  and without the `alloc` feature. The library was already wasm-portable
+  by construction (no_std, zero deps, zero unsafe, no I/O); the CI guard
+  makes the support claim binding.
+- CI now also runs the test suite with `--no-default-features` (the
+  core-only tests were previously compiled but never executed), lints
+  examples and tests via `clippy --all-targets`, and checks the
+  no-`alloc` shape at the 1.63 MSRV.
+
+### Changed
+
+- `canonical_index` no longer requires the `alloc` feature: Booth's
+  algorithm (which allocates a failure table) was replaced by the
+  two-pointer minimal-rotation algorithm — same O(n) time, O(1) space,
+  same results. Only the `Vec`-returning methods remain alloc-gated.
+
 ### Fixed
 
 - `index_of_slice` returned wrong results on rotated or reflected views:
@@ -26,17 +57,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `min_rotational_hamming_distance` again abandons a rotation as soon as
   its running mismatch count reaches the best so far (the short-circuit
   introduced in 0.2.0 was lost in the 0.3.0 rewrite).
-
-### Added
-
-- CI verifies the crate compiles for `wasm32-unknown-unknown` both with
-  and without the `alloc` feature. The library was already wasm-portable
-  by construction (no_std, zero deps, zero unsafe, no I/O); the CI guard
-  makes the support claim binding.
-- CI now also runs the test suite with `--no-default-features` (the
-  core-only tests were previously compiled but never executed), lints
-  examples and tests via `clippy --all-targets`, and checks the
-  no-`alloc` shape at the 1.63 MSRV.
 
 ## [0.3.0] - 2026-05-17
 

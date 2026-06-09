@@ -125,9 +125,37 @@ impl<'a, T> Circular<'a, T> {
         &self.ring[self.map_index(pos)]
     }
 
+    /// Returns the element at the circular index `i`, or `None` if the
+    /// ring is empty.
+    ///
+    /// The non-panicking companion to [`apply`](Self::apply).
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use ring_seq::AsCircular;
+    ///
+    /// let r = [10, 20, 30].circular();
+    /// assert_eq!(r.get(4), Some(&20));
+    /// assert_eq!(r.get(-1), Some(&30));
+    ///
+    /// let empty: [i32; 0] = [];
+    /// assert_eq!(empty.circular().get(0), None);
+    /// ```
+    #[inline]
+    #[must_use]
+    pub fn get(self, i: isize) -> Option<&'a T> {
+        if self.ring.is_empty() {
+            None
+        } else {
+            Some(self.apply(i))
+        }
+    }
+
     /// Returns an iterator yielding the elements of this view in order.
     ///
-    /// The iterator is `ExactSizeIterator` and `FusedIterator`.
+    /// The iterator is `ExactSizeIterator`, `DoubleEndedIterator`, and
+    /// `FusedIterator`.
     ///
     /// # Examples
     ///
@@ -728,6 +756,60 @@ impl<'a, T> Circular<'a, T> {
     }
 
     // -----------------------------------------------------------------------
+    // Necklace — alloc-free
+    // -----------------------------------------------------------------------
+
+    /// Returns the starting offset of the lexicographically smallest
+    /// rotation of this view. Among tied (periodic) rotations, the
+    /// smallest offset is returned.
+    ///
+    /// Runs in O(n) time and O(1) space (the classic two-pointer
+    /// minimal-rotation algorithm), so it is available without the
+    /// `alloc` feature. Single-element and empty views return `0`.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use ring_seq::AsCircular;
+    ///
+    /// assert_eq!([3, 1, 2].circular().canonical_index(), 1);
+    /// ```
+    #[must_use]
+    pub fn canonical_index(self) -> usize
+    where
+        T: Ord,
+    {
+        let n = self.ring.len();
+        if n <= 1 {
+            return 0;
+        }
+        // Two candidate start offsets `i < j`; `k` is the length of their
+        // common prefix so far. Each comparison either extends the prefix
+        // or eliminates `k + 1` offsets for one candidate, so the loop is
+        // O(n) overall.
+        let at = |idx: usize| &self.ring[self.map_index(idx)];
+        let (mut i, mut j, mut k) = (0usize, 1usize, 0usize);
+        while i < n && j < n && k < n {
+            let a = at(i + k);
+            let b = at(j + k);
+            if a == b {
+                k += 1;
+                continue;
+            }
+            if a > b {
+                i += k + 1;
+            } else {
+                j += k + 1;
+            }
+            if i == j {
+                j += 1;
+            }
+            k = 0;
+        }
+        core::cmp::min(i, j)
+    }
+
+    // -----------------------------------------------------------------------
     // Symmetry — alloc-free counts
     // -----------------------------------------------------------------------
 
@@ -799,7 +881,7 @@ impl<'a, T> Circular<'a, T> {
     /// assert_eq!(chunks, vec![vec![1, 2], vec![3, 4], vec![5, 1]]);
     /// ```
     #[must_use]
-    pub fn chunks(self, size: usize) -> Windows<'a, T> {
+    pub fn chunks(self, size: usize) -> Chunks<'a, T> {
         assert!(size > 0, "chunk size must be positive");
         let n = self.ring.len();
         let total = if n == 0 { 0 } else { (n + size - 1) / size };
@@ -820,7 +902,7 @@ impl<'a, T> Circular<'a, T> {
 /// Iterator over the elements of a [`Circular`] view.
 ///
 /// Created by [`Circular::iter`]. Yields `&'a T` and is
-/// [`ExactSizeIterator`] + [`FusedIterator`].
+/// [`ExactSizeIterator`] + [`DoubleEndedIterator`] + [`FusedIterator`].
 #[derive(Debug)]
 pub struct CircularIter<'a, T> {
     view: Circular<'a, T>,
@@ -856,10 +938,79 @@ impl<'a, T> Iterator for CircularIter<'a, T> {
     fn size_hint(&self) -> (usize, Option<usize>) {
         (self.remaining, Some(self.remaining))
     }
+
+    #[inline]
+    fn nth(&mut self, n: usize) -> Option<&'a T> {
+        if n >= self.remaining {
+            self.pos += self.remaining;
+            self.remaining = 0;
+            return None;
+        }
+        self.pos += n;
+        self.remaining -= n;
+        self.next()
+    }
+
+    #[inline]
+    fn count(self) -> usize {
+        self.remaining
+    }
+
+    #[inline]
+    fn last(mut self) -> Option<&'a T> {
+        self.next_back()
+    }
+}
+
+impl<'a, T> DoubleEndedIterator for CircularIter<'a, T> {
+    #[inline]
+    fn next_back(&mut self) -> Option<&'a T> {
+        if self.remaining == 0 {
+            return None;
+        }
+        self.remaining -= 1;
+        Some(&self.view.ring[self.view.map_index(self.pos + self.remaining)])
+    }
 }
 
 impl<T> ExactSizeIterator for CircularIter<'_, T> {}
 impl<T> FusedIterator for CircularIter<'_, T> {}
+
+/// `for x in ring.circular()` walks the view once, in order.
+impl<'a, T> IntoIterator for Circular<'a, T> {
+    type Item = &'a T;
+    type IntoIter = CircularIter<'a, T>;
+
+    #[inline]
+    fn into_iter(self) -> CircularIter<'a, T> {
+        self.iter()
+    }
+}
+
+impl<'a, T> IntoIterator for &Circular<'a, T> {
+    type Item = &'a T;
+    type IntoIter = CircularIter<'a, T>;
+
+    #[inline]
+    fn into_iter(self) -> CircularIter<'a, T> {
+        self.iter()
+    }
+}
+
+/// `ring.circular()[i]` is [`apply`](Circular::apply): the index wraps in
+/// both directions.
+///
+/// # Panics
+///
+/// Panics if the ring is empty.
+impl<T> core::ops::Index<isize> for Circular<'_, T> {
+    type Output = T;
+
+    #[inline]
+    fn index(&self, i: isize) -> &T {
+        self.apply(i)
+    }
+}
 
 // ---------------------------------------------------------------------------
 // Enumerate — yields (&T, ring_index)
@@ -1195,6 +1346,10 @@ impl<'a, T> Iterator for Windows<'a, T> {
 impl<T> ExactSizeIterator for Windows<'_, T> {}
 impl<T> FusedIterator for Windows<'_, T> {}
 
+/// Iterator returned by [`Circular::chunks`] — the same shape as
+/// [`Windows`], stepping by the chunk size instead of 1.
+pub type Chunks<'a, T> = Windows<'a, T>;
+
 // ---------------------------------------------------------------------------
 // AsCircular
 // ---------------------------------------------------------------------------
@@ -1226,8 +1381,7 @@ impl<T> AsCircular<T> for [T] {
 }
 
 // ---------------------------------------------------------------------------
-// Alloc-gated section: methods returning owned collections, plus Booth's
-// algorithm for canonical-index search.
+// Alloc-gated section: methods returning owned collections.
 // ---------------------------------------------------------------------------
 
 #[cfg(feature = "alloc")]
@@ -1239,22 +1393,6 @@ impl<'a, T> Circular<'a, T> {
         T: Clone,
     {
         self.iter().cloned().collect()
-    }
-
-    /// Returns the starting offset of the lexicographically smallest
-    /// rotation of this view (Booth's O(n) algorithm).
-    ///
-    /// Single-element and empty views return `0`.
-    #[must_use]
-    pub fn canonical_index(self) -> usize
-    where
-        T: Ord,
-    {
-        if self.ring.len() <= 1 {
-            0
-        } else {
-            booth_least_rotation(self)
-        }
     }
 
     /// Returns the canonical (lexicographically smallest) rotation of
@@ -1345,42 +1483,6 @@ impl<'a, T> Circular<'a, T> {
             })
             .collect()
     }
-}
-
-/// Booth's O(n) algorithm for finding the starting offset of the
-/// lexicographically smallest rotation of a `Circular` view.
-#[cfg(feature = "alloc")]
-#[allow(
-    clippy::cast_sign_loss,
-    clippy::cast_possible_wrap,
-    clippy::many_single_char_names
-)]
-fn booth_least_rotation<T: Ord>(c: Circular<'_, T>) -> usize {
-    let n = c.ring.len();
-    let len = 2 * n;
-    let mut f: Vec<isize> = alloc::vec![-1; len];
-    let mut k: usize = 0;
-    let at = |idx: usize| &c.ring[c.map_index(idx % n)];
-
-    for j in 1..len {
-        let sj = at(j);
-        let mut i = f[j - k - 1];
-        while i != -1 && at(k + i as usize + 1) != sj {
-            if sj < at(k + i as usize + 1) {
-                k = j - i as usize - 1;
-            }
-            i = f[i as usize];
-        }
-        if i == -1 && at(k) != sj {
-            if sj < at(k) {
-                k = j;
-            }
-            f[j - k] = -1;
-        } else {
-            f[j - k] = i + 1;
-        }
-    }
-    k
 }
 
 // ---------------------------------------------------------------------------
@@ -2137,15 +2239,8 @@ mod tests {
         let empty: [i32; 0] = [];
         assert_eq!(empty.circular().symmetry(), 0);
     }
-}
 
-#[cfg(all(test, feature = "alloc"))]
-mod alloc_tests {
-    use super::*;
-    use alloc::vec;
-    use alloc::vec::Vec;
-
-    // ── Booth / canonical ──────────────────────────────────────────────
+    // ── canonical_index (alloc-free) ───────────────────────────────────
 
     #[test]
     fn canonical_index_basic() {
@@ -2160,6 +2255,135 @@ mod alloc_tests {
         assert_eq!(empty.circular().canonical_index(), 0);
         assert_eq!([7].circular().canonical_index(), 0);
     }
+
+    #[test]
+    fn canonical_index_periodic_returns_first() {
+        // Ties between periodic rotations resolve to the smallest offset.
+        assert_eq!([3, 1, 2, 3, 1, 2].circular().canonical_index(), 1);
+        assert_eq!([5, 5, 5].circular().canonical_index(), 0);
+        assert_eq!([1, 0, 1, 0].circular().canonical_index(), 1);
+    }
+
+    #[test]
+    fn canonical_index_on_transformed_views() {
+        let r = [2, 3, 0, 1].circular();
+        // Rotating the view moves the minimal rotation accordingly.
+        assert_eq!(r.rotate_left(2).canonical_index(), 0);
+        // reflect_at(0) of [2,3,0,1] = [2,1,0,3]; min rotation [0,3,2,1] at 2.
+        assert_eq!(r.reflect_at(0).canonical_index(), 2);
+    }
+
+    // ── get / Index ────────────────────────────────────────────────────
+
+    #[test]
+    fn get_basic_and_empty() {
+        let r = [10, 20, 30].circular();
+        assert_eq!(r.get(4), Some(&20));
+        assert_eq!(r.get(-1), Some(&30));
+        let empty: [i32; 0] = [];
+        assert_eq!(empty.circular().get(0), None);
+    }
+
+    #[test]
+    fn index_operator_wraps() {
+        let r = [10, 20, 30].circular();
+        assert_eq!(r[0], 10);
+        assert_eq!(r[4], 20);
+        assert_eq!(r[-1], 30);
+        assert_eq!(r.reflect_at(0)[1], 30);
+    }
+
+    #[test]
+    #[should_panic]
+    fn index_operator_panics_on_empty() {
+        let empty: [i32; 0] = [];
+        let _ = empty.circular()[0];
+    }
+
+    // ── IntoIterator ───────────────────────────────────────────────────
+
+    #[test]
+    fn into_iterator_by_value_and_by_ref() {
+        let r = [1, 2, 3].circular();
+        let mut sum = 0;
+        for &x in r {
+            sum += x;
+        }
+        assert_eq!(sum, 6);
+        // By reference too; the view is Copy so it is still usable after.
+        let mut prod = 1;
+        for &x in &r {
+            prod *= x;
+        }
+        assert_eq!(prod, 6);
+        assert_eq!(r.len(), 3);
+    }
+
+    // ── CircularIter: double-ended + overrides ─────────────────────────
+
+    #[test]
+    fn iter_rev_walks_backward() {
+        let r = [1, 2, 3, 4].circular();
+        let mut out = [0; 4];
+        for (s, &x) in out.iter_mut().zip(r.iter().rev()) {
+            *s = x;
+        }
+        assert_eq!(out, [4, 3, 2, 1]);
+        // On a transformed view too: rotate_left(1) = [2, 3, 4, 1].
+        for (s, &x) in out.iter_mut().zip(r.rotate_left(1).iter().rev()) {
+            *s = x;
+        }
+        assert_eq!(out, [1, 4, 3, 2]);
+    }
+
+    #[test]
+    fn iter_mixed_front_and_back() {
+        let r = [1, 2, 3, 4, 5].circular();
+        let mut it = r.iter();
+        assert_eq!(it.next(), Some(&1));
+        assert_eq!(it.next_back(), Some(&5));
+        assert_eq!(it.next(), Some(&2));
+        assert_eq!(it.next_back(), Some(&4));
+        assert_eq!(it.next(), Some(&3));
+        assert_eq!(it.next(), None);
+        assert_eq!(it.next_back(), None);
+    }
+
+    #[test]
+    fn iter_rev_on_wrapping_window() {
+        // Windows longer than the ring wrap; rev must see the same elements.
+        let r = [1, 2, 3].circular();
+        let w = r.windows(5).next().unwrap();
+        let mut out = [0; 5];
+        for (s, &x) in out.iter_mut().zip(w.rev()) {
+            *s = x;
+        }
+        assert_eq!(out, [2, 1, 3, 2, 1]);
+    }
+
+    #[test]
+    fn iter_nth_count_last() {
+        let r = [10, 20, 30, 40, 50].circular();
+        assert_eq!(r.iter().nth(1), Some(&20));
+        assert_eq!(r.iter().nth(3), Some(&40));
+        assert_eq!(r.iter().nth(5), None);
+        let mut it = r.iter();
+        assert_eq!(it.nth(2), Some(&30));
+        assert_eq!(it.next(), Some(&40)); // nth consumed 0..=2
+        assert_eq!(it.count(), 1);
+        assert_eq!(r.iter().count(), 5);
+        assert_eq!(r.iter().last(), Some(&50));
+        assert_eq!(r.slice(0, 0).last(), None);
+    }
+}
+
+#[cfg(all(test, feature = "alloc"))]
+mod alloc_tests {
+    use super::*;
+    use alloc::vec;
+    use alloc::vec::Vec;
+
+    // ── Canonical (Vec-returning) ──────────────────────────────────────
 
     #[test]
     fn canonical_basic() {
